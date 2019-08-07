@@ -133,7 +133,7 @@ if [[ $_arg_video =~ (.*\/)([0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2
       if [ $_target_length -eq 0 ]; then
         _target_length=$_length
       fi
-      if [ $_length -ge $_target_length+1 ] && [ $_length -le $_target_length-1 ]; then
+      if [ $_length -ge $(($_target_length-1)) ] && [ $_length -le $(($_target_length+1)) ]; then
         echo "  $v valid"
       else
         echo "  $v Invalid length - $_length, expecting $_target_length"
