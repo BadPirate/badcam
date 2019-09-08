@@ -1,10 +1,13 @@
 import React from 'react';
+import { Card } from 'react-bootstrap';
 
 function App() {
   return (
-    <div className="App">
-      Hello
-    </div>
+    <Card>
+      <Card.Header>
+        BadCam
+      </Card.Header>
+    </Card>
   );
 }
 
