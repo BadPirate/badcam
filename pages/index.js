@@ -6,17 +6,25 @@ import { VideoComponent } from '../components/VideoComponent';
 import 'bootstrap-css-only/css/bootstrap.min.css'
 
 class App extends React.Component {
-  state={
-    account: null,
-    loading: false
+  static async getInitialProps(ctx) {
+    console.log(ctx)
+    return {
+      config: {
+        clientId: process.env.REACT_APP_DROPBOX_CLIENT_ID,
+        token: ctx.query.access_token
+      }
+    }
   }
 
+  state={
+    account: null,
+  }
+  
   box=null
 
   render() {
-    let account = this.state.account
-    let loading = this.state.loading
     let box = this.box
+    let account = this.state.account
 
     return (
       <Card>
@@ -41,11 +49,9 @@ class App extends React.Component {
         {
           account ?
           <VideoComponent account={account} box={box}/> :
-          (loading ?
-          <Alert variant="info">Accessing Dropbox...</Alert> :
-          (box ? <Button href={box.getAuthenticationUrl(`${window.location.href}redirect`)}>
+          (box ? <Button href={box.getAuthenticationUrl(`${window.location.href}`)}>
             Login Dropbox
-          </Button> : null ))
+          </Button> : null )
         }
         </Card.Body>
       </Card>
@@ -54,22 +60,21 @@ class App extends React.Component {
 
   componentDidMount() {
     let account = this.state.account
+    let token = this.state.token
 
     if (!this.box) {
-      let config = { clientId: process.env.REACT_APP_DROPBOX_CLIENT_ID }
+      let config = this.props.config
       this.box = new Dropbox(config);
+      this.forceUpdate()
 
-      let access = queryString.parse(window.location.hash).access_token
-      if (access) {
-        localStorage.setItem('access',access)
+      if (token) {
+        localStorage.setItem('access',token)
         this.forceUpdate()
       } else {
-        access = localStorage.getItem('access')
+        token = localStorage.getItem('access')
       }
-      if (!account && access) {
-        if (access) {
-          config.accessToken = access
-        }
+      if (!account && token) {
+        config.accessToken = token
         this.box = new Dropbox(config);
         this.setState({
           loading: true
