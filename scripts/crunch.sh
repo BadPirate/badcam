@@ -144,6 +144,11 @@ if [[ $_arg_video =~ (.*\/)([0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2
       exit 1
     fi
   done
+  _preview=${_path}${_prefix}-preview.png
+  echo "  Generating Preview - $_preview..."
+  ffmpeg -y -i $_right -i $_front -i $_left -nostdin -loglevel panic -filter_complex \
+    "[0:v][1:v]hstack[lf];[lf][2:v]hstack[lfr];[lfr]scale=w=600:h=150" \
+     -vframes 1 $_preview
   echo "  Crunching - $_prefix..."
   _crunch=${_path}${_prefix}-crunch.mp4
   _highlight=${_path}${_prefix}-highlight.mp4
