@@ -15,15 +15,19 @@ export class VideoComponent extends React.Component {
     let message = this.state.message
     let variant = this.state.variant
     let folders = this.state.folders
+    let box = this.props.box
+
     return (
       <Container>
         { message ? <Alert variant={variant}>{message}</Alert> : null }
         { folders ?
           <Table striped bordered>
             <thead>
-              <th>Date</th>
-              <th>Time</th>
-              <th>Details</th>
+              <tr>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Details</th>
+              </tr>
             </thead>
             <tbody>
             {
@@ -32,12 +36,11 @@ export class VideoComponent extends React.Component {
                 if (b.name > a.name) return -1
                 return 0
               }).map(folder => {
-                return FolderComponent(folder)
+                return <FolderComponent key={folder.name} folder={folder} box={box}/>
               })
             }
             </tbody>
           </Table> : null
-          // <p>{ JSON.stringify(folders) }</p>: null
         }
       </Container>
     );

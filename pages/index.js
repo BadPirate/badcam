@@ -6,7 +6,6 @@ import 'bootstrap-css-only/css/bootstrap.min.css'
 
 class App extends React.Component {
   static async getInitialProps(ctx) {
-    console.log(ctx)
     return {
       config: {
         clientId: process.env.REACT_APP_DROPBOX_CLIENT_ID,
