@@ -1,7 +1,6 @@
 import React from 'react'
-import { Card, Button, Alert, Col, Row } from 'react-bootstrap'
+import { Card, Button, Col, Row } from 'react-bootstrap'
 import { Dropbox } from 'dropbox'
-import queryString from 'query-string'
 import { VideoComponent } from '../components/VideoComponent';
 import 'bootstrap-css-only/css/bootstrap.min.css'
 
@@ -64,6 +63,7 @@ class App extends React.Component {
 
     if (!this.box) {
       let config = this.props.config
+
       this.box = new Dropbox(config);
       this.forceUpdate()
 
