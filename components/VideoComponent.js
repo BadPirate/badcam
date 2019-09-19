@@ -22,13 +22,6 @@ export class VideoComponent extends React.Component {
         { message ? <Alert variant={variant}>{message}</Alert> : null }
         { folders ?
           <Table striped bordered>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Time</th>
-                <th>Details</th>
-              </tr>
-            </thead>
             <tbody>
             {
               folders.entries.sort( (a,b) => {

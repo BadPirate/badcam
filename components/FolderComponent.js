@@ -1,33 +1,49 @@
 import React from 'react'
 import { Alert } from 'react-bootstrap';
+import { EventComponent } from './EventComponent';
 
-/** @typedef {typeof import('dropbox')} Dropbox*/
+/** @typedef {typeof import('dropbox')} Dropbox */
+
+class Event {
+  prefix=null
+  front=null
+  left=null
+  right=null
+  preview=null
+  highlight=null
+  crunch=null
+
+  hasOriginals() {
+    return (this.left && this.right && this.front)
+  }
+}
 
 export class FolderComponent extends React.Component {
   state={
     message: "Loading...",
     variant: "info",
-    preview: null
+    events: null
   }
 
   render() {
     let folder = this.props.folder
     let message = this.state.message
     let variant = this.state.variant
-    let preview = this.state.preview
+    let events = this.state.events
+    let box = this.props.box
 
+    if (events && events.length == 0) return null
     if (folder[".tag"] != "folder") return null
     let regex = /(\d\d\d\d)-(\d\d)-(\d\d)_(\d\d)-(\d\d)-(\d\d)/
     let nameParts = regex.exec(folder.name)
     if (nameParts.length < 7) return null
-    let [_, year, month, day, hour, minute, second] = nameParts
     return (
       <tr>
-        <td>{`${year}-${month}-${day}`}</td>
-        <td>{`${hour}:${minute}.${second}`}</td>
         <td>
         { message ? <Alert variant={variant}>{message}</Alert> : null}
-        { preview ? <img src={preview}/> : null }
+        { events ? events.map(event => {
+            return <EventComponent event={event} box={box}/>
+          }) : null}
         </td>
       </tr>
     );
@@ -46,32 +62,35 @@ export class FolderComponent extends React.Component {
         })
         return
       }
-      var found = false
+      var events = new Map()
+      let regex = /(\d\d\d\d-\d\d-\d\d_\d\d-\d\d-\d\d)-(.*)\.(.*)/
+      this.setState({
+        message: "Loading events...",
+        variant: "info"
+      })
       result.entries.forEach(file => {
-        if (file.name.endsWith("preview.png")) {
-          found = true
-          box.filesGetTemporaryLink({path: file.path_lower}).then( (result, error) => {
-            if (error) {
-              this.setState({
-                message: "Unable to load preview",
-                variant: "danger"
-              })
-              return
-            }
-            this.setState({
-              message: null,
-              variant: null,
-              preview: result.link
-            })
-          })
+        let parts = regex.exec(file.name)
+        if (parts.length < 0) return
+        let [ _, prefix, type ] = parts
+        if (!events.has(prefix)) {
+          events.set(prefix, new Event())
+        }
+        let event = events.get(prefix)
+        event.prefix = prefix
+        switch(type) {
+          case "front": event.front = file; break
+          case "left_repeater": event.left = file; break
+          case "right_repeater": event.right = file; break
+          case "preview": event.preview = file; break
+          case "crunch": event.crunch = file; break
+          case "highlight": event.highlight = file; break
         }
       })
-      if (!found) {
-        this.setState({
-          message: "Generating preview...",
-          variant: "info"
-        })
-      }
+      this.setState({
+        message: null,
+        variant: null,
+        events: Array.from(events.values())
+      })
     })
   }
 }
