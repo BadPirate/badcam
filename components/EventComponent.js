@@ -9,7 +9,7 @@ export class EventComponent extends React.Component {
     message: "Loading...",
     variant: "info",
     invalid: false,
-    buttons: null
+    buttons: []
   }
 
   render() {
@@ -25,7 +25,7 @@ export class EventComponent extends React.Component {
         <p>{event.prefix}</p>
         { message ? <Alert variant={variant}>{message}</Alert> : null }
         { preview ? <img src={preview.link}/> : null }
-        { buttons ?
+        { buttons.length > 0 ?
           <ButtonGroup>
             {buttons}
           </ButtonGroup> : null }
@@ -57,16 +57,89 @@ export class EventComponent extends React.Component {
           return {
             message: null,
             variant: null,
-            buttons: (state.buttons || []).concat(
-              <Button>Generate Preview</Button>
+            buttons: state.buttons.concat(
+              <Button key="generate_preview" onClick={ element => {
+                this.generatePreview()
+              }}>
+                Generate Preview
+              </Button>
             )
           }
         })
       } else {
         this.setState({
-          invalid: true
+          message: "Incomplete",
+          variant: "warning"
         })
       }
     }
+  }
+
+  generatePreview() {
+    let box = this.props.box
+    let event = this.props.event
+    let account = this.props.account
+
+    this.setState(state => {
+      return {
+        message: "Generating Preview...",
+        variant: "info",
+        buttons: state.buttons.filter(button => {
+          button.key !== "generate_preview"
+        })
+      }
+    })
+    var size = 0
+    let uploadPath = `${event.folder}/${event.prefix}-preview.png`
+    console.log("UPLOADPATH",uploadPath)
+    Promise.all([event.front, event.left, event.right].map(resource => {
+      size += resource.size
+      return new Promise( (resolve, _) => {
+        box.filesGetTemporaryLink({path: resource.path_lower}).then( result => {
+          resolve(result.link)
+        })
+      })
+    }).concat(box.filesGetTemporaryUploadLink({
+      commit_info: {
+        path: uploadPath,
+      },
+      duration: 14400
+    }).then(result => {
+      return result.link
+    }))).then(links => {
+      let [front, left, right, upload] = links
+      fetch('api/preview', {
+        method: "POST",
+        body: JSON.stringify({
+          front: front,
+          left: left,
+          right: right,
+          size: size,
+          prefix: event.prefix,
+          user: account.account_id,
+          upload: upload
+        })
+      }).then((response) => {
+        if (response.status == 200) {
+          this.setState({
+            message: "Success",
+            variant: "info"
+          })
+        } else {
+          response.text().then(text => {
+            this.setState({
+              message: `Error - ${text}`,
+              variant: "danger"
+            })
+          })
+        }
+      }).catch(error => {
+        console.log("FAILURE",error)
+        this.setState({
+          message: JSON.stringify(error),
+          variant: "danger"
+        })
+      })
+    })
   }
 }

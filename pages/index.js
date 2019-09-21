@@ -46,7 +46,7 @@ class App extends React.Component {
         <Card.Body>
         {
           account ?
-          <VideoComponent account={account} box={box}/> :
+          <VideoComponent account={account} box={box} account={account}/> :
           (box ? <Button href={box.getAuthenticationUrl(`${window.location.href}`)}>
             Login Dropbox
           </Button> : null )

@@ -15,6 +15,7 @@ export class VideoComponent extends React.Component {
     let message = this.state.message
     let variant = this.state.variant
     let folders = this.state.folders
+    let account = this.props.account
     let box = this.props.box
 
     return (
@@ -29,7 +30,7 @@ export class VideoComponent extends React.Component {
                 if (b.name > a.name) return -1
                 return 0
               }).map(folder => {
-                return <FolderComponent key={folder.name} folder={folder} box={box}/>
+                return <FolderComponent key={folder.name} folder={folder} box={box} account={account}/>
               })
             }
             </tbody>

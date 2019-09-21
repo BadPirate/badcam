@@ -12,7 +12,8 @@ class Event {
   preview=null
   highlight=null
   crunch=null
-
+  folder=null
+  
   hasOriginals() {
     return (this.left && this.right && this.front)
   }
@@ -31,6 +32,7 @@ export class FolderComponent extends React.Component {
     let variant = this.state.variant
     let events = this.state.events
     let box = this.props.box
+    let account = this.props.account
 
     if (events && events.length == 0) return null
     if (folder[".tag"] != "folder") return null
@@ -42,7 +44,7 @@ export class FolderComponent extends React.Component {
         <td>
         { message ? <Alert variant={variant}>{message}</Alert> : null}
         { events ? events.map(event => {
-            return <EventComponent event={event} box={box}/>
+            return <EventComponent event={event} box={box} account={account}/>
           }) : null}
         </td>
       </tr>
@@ -77,6 +79,7 @@ export class FolderComponent extends React.Component {
         }
         let event = events.get(prefix)
         event.prefix = prefix
+        event.folder = folder.path_lower
         switch(type) {
           case "front": event.front = file; break
           case "left_repeater": event.left = file; break
