@@ -34,45 +34,49 @@ export class EventComponent extends React.Component {
   }
 
   componentDidMount() {
-    /** @param Dropbox box */
-    let box = this.props.box
-    let event = this.props.event
+    this.loadPreview()
+  }
 
-    if (event.preview) {
-      this.setState({
-        message: "Loading preview...",
-        variant: "info"
-      })
-      box.filesGetTemporaryLink({ path: event.preview.path_lower}).then( result => {
-        this.setState({
-          message: null,
-          variant: null,
-          preview: result
-        })
-      })
-    } else {
-      // No preview
-      if (event.hasOriginals()) {
-        this.setState( state => {
-          return {
-            message: null,
-            variant: null,
-            buttons: state.buttons.concat(
-              <Button key="generate_preview" onClick={ element => {
-                this.generatePreview()
-              }}>
-                Generate Preview
-              </Button>
-            )
-          }
-        })
-      } else {
-        this.setState({
-          message: "Incomplete",
-          variant: "warning"
-        })
-      }
-    }
+  loadPreview() {
+     /** @param Dropbox box */
+     let box = this.props.box
+     let event = this.props.event
+ 
+     if (event.preview) {
+       this.setState({
+         message: "Loading preview...",
+         variant: "info"
+       })
+       box.filesGetTemporaryLink({ path: event.preview.path_lower}).then( result => {
+         this.setState({
+           message: null,
+           variant: null,
+           preview: result
+         })
+       })
+     } else {
+       // No preview
+       if (event.hasOriginals()) {
+         this.setState( state => {
+           return {
+             message: null,
+             variant: null,
+             buttons: state.buttons.concat(
+               <Button key="generate_preview" onClick={ element => {
+                 this.generatePreview()
+               }}>
+                 Generate Preview
+               </Button>
+             )
+           }
+         })
+       } else {
+         this.setState({
+           message: "Incomplete",
+           variant: "warning"
+         })
+       }
+     }
   }
 
   generatePreview() {
@@ -99,15 +103,8 @@ export class EventComponent extends React.Component {
           resolve(result.link)
         })
       })
-    }).concat(box.filesGetTemporaryUploadLink({
-      commit_info: {
-        path: uploadPath,
-      },
-      duration: 14400
-    }).then(result => {
-      return result.link
-    }))).then(links => {
-      let [front, left, right, upload] = links
+    })).then(links => {
+      let [front, left, right] = links
       fetch('api/preview', {
         method: "POST",
         body: JSON.stringify({
@@ -117,14 +114,12 @@ export class EventComponent extends React.Component {
           size: size,
           prefix: event.prefix,
           user: account.account_id,
-          upload: upload
+          token: localStorage.getItem('access'),
+          target: uploadPath
         })
       }).then((response) => {
         if (response.status == 200) {
-          this.setState({
-            message: "Success",
-            variant: "info"
-          })
+          this.loadPreview()
         } else {
           response.text().then(text => {
             this.setState({

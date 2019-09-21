@@ -1,4 +1,6 @@
 import { pexec } from "../../utils";
+import dropboxV2Api from 'dropbox-v2-api'
+import fs from 'fs'
 
 let basedir = pexec('r=$(dirname $(mktemp -u))"/badcam";mkdir -p $r;echo $r')
 
@@ -14,15 +16,20 @@ export default (req, res) => {
     size,
     prefix,
     user,
-    upload
+    token,
+    target
   } = JSON.parse(body)
   console.log("PREFIX", prefix)
-  console.log("UPLOAD", upload)
+  console.log("TOKEN", token)
   
   res.setHeader('Content-Type', 'text/plain')
   res.statusCode = 500 // default
   
   var vidDir = null
+  var previewPath = null
+  let dropbox = dropboxV2Api.authenticate({
+    token: token
+  })
   basedir.then(({stdout}) => {
     // Create the vid dir if needed
     let baseDir = stdout
@@ -55,30 +62,32 @@ export default (req, res) => {
   .then((result) => {
     console.log("Downloaded",result)
     let [frontPath, leftPath, rightPath] = result
-    let previewPath = `${vidDir}/${prefix}-preview.png`
+    previewPath = `${vidDir}/${prefix}-preview.png`
     return pexec(`if [ ! -f ${previewPath} ]; then ffmpeg -y -i ${rightPath} -i ${frontPath} -i ${leftPath} -nostdin -loglevel panic -filter_complex \
     "[0:v][1:v]hstack[lf];[lf][2:v]hstack[lfr];[lfr]scale=w=600:h=150" \
      -vframes 1 ${previewPath}; fi`).then(_ => {
        console.log("Preview Generated:",previewPath)
-       return previewPath
      })
   })
-  .then(previewPath => {
-    let curl = `curl -X POST "${upload}" --header "Content-Type: application/octet-stream" --data-binary "@${previewPath}"`
-    console.log("Curling",curl)
-    return pexec(curl)
-  })
-  .then(res => {
-    let json = null
-    try {
-      json = JSON.parse(res.stdout)
-    } catch (error) {
-      // ignore
-    }
-    if (!json) {
-      throw `Curl failed - ${res.stdout}`
-    }
-    console.log("Uploaded",res)
+  .then(_ => {
+    return new Promise((resolve, reject) => {
+      dropbox({
+        resource: 'files/upload',
+        parameters: {
+            path: target
+        },
+        readStream: fs.createReadStream(previewPath)
+      }, (err, result, response) => {
+        console.log("Dropbox",result)
+        if (err) {
+          reject(`Dropbox Upload Error: ${err.error_summary}`)
+        } else {
+          resolve(result)
+        }
+    })})
+    // let curl = `curl -X POST "${upload}" --header "Content-Type: application/octet-stream" --data-binary "@${previewPath}"`
+    // console.log("Curling",curl)
+    // return pexec(curl)
   })
   .then(_ => {
     console.log("Success")
