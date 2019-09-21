@@ -22,7 +22,6 @@ export default (req, res) => {
   console.log("PREFIX", prefix)
   console.log("TOKEN", token)
   
-  res.setHeader('Content-Type', 'text/plain')
   res.statusCode = 500 // default
   
   var vidDir = null
@@ -77,8 +76,7 @@ export default (req, res) => {
             path: target
         },
         readStream: fs.createReadStream(previewPath)
-      }, (err, result, response) => {
-        console.log("Dropbox",result)
+      }, (err, result, _) => {
         if (err) {
           reject(`Dropbox Upload Error: ${err.error_summary}`)
         } else {
@@ -89,14 +87,19 @@ export default (req, res) => {
     // console.log("Curling",curl)
     // return pexec(curl)
   })
-  .then(_ => {
+  .then(result => {
     console.log("Success")
     res.statusCode = 200
-    res.end("Generated preview")
+    res.setHeader('Content-Type', 'application/json') 
+    let out = { preview: result }
+    console.log("OUT:",out)
+    res.end(JSON.stringify(out))
   })
   .catch( e => {
     console.log("Error: ",e)
+    res.setHeader('Content-Type', 'text/plain')
     res.end(e)
   })
 }
 
+// ffmpeg -y -i $right -i $front -i $left -nostdin -loglevel panic -filter_complex "[0:v][1:v]hstack[lf];[lf][2:v]hstack[lfr];[lfr]split[full][f];[f]select=gt(scene\,0.003),setpts=N/(16*TB)[bh];[bh]scale=w=600:h=150[highlight]" -map "[full]" -pix_fmt yuv420p $crunch -map "[highlight]" -pix_fmt yuv420p $highlight

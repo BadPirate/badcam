@@ -24,7 +24,7 @@ export class EventComponent extends React.Component {
       <Container>
         <p>{event.prefix}</p>
         { message ? <Alert variant={variant}>{message}</Alert> : null }
-        { preview ? <img src={preview.link}/> : null }
+        { preview ? <img src={preview.link} width="100%"/> : null }
         { buttons.length > 0 ?
           <ButtonGroup>
             {buttons}
@@ -34,15 +34,73 @@ export class EventComponent extends React.Component {
   }
 
   componentDidMount() {
+    let event = this.props.event
+    
     this.loadPreview()
+    
+    // Delete Button
+    this.setState(state => {
+      return {
+        buttons: state.buttons.concat(
+          <Button key="delete" variant="danger" onClick={ _ => {
+            this.setState(state => {
+              return {
+                message: "Deleting...",
+                variant: "danger",
+                buttons: []
+              }
+            })
+            let box = this.props.box
+            Promise.all([
+              event.front,
+              event.left,
+              event.right,
+              event.highlight,
+              event.crunch,
+              event.preview
+            ].map(possible => {
+              if (possible) {
+                return box.filesDelete({ path: possible.path_lower })
+              }
+            })).then(_, error => {
+              if (error) {
+                this.setState({
+                  message: JSON.stringify(error),
+                  variant: "danger"
+                })
+                return
+              }
+              this.setState({
+                invalid: true
+              })
+            })
+          }}>
+            Delete
+          </Button>
+        )
+      }
+    })
   }
 
   loadPreview() {
      /** @param Dropbox box */
      let box = this.props.box
      let event = this.props.event
- 
-     if (event.preview) {
+
+     // Load Preview / Highlight
+     if (event.highlight) {
+       this.setState({
+         message: "Loading highlight...",
+         variant: "info"
+       })
+       box.filesGetTemporaryLink({ path: event.highlight.path_lower}).then( result => {
+        this.setState({
+          message: null,
+          variant: null,
+          preview: result
+        })
+      })
+     } else if (event.preview) {
        this.setState({
          message: "Loading preview...",
          variant: "info"
@@ -119,7 +177,11 @@ export class EventComponent extends React.Component {
         })
       }).then((response) => {
         if (response.status == 200) {
-          this.loadPreview()
+          response.json().then(json => {
+            console.log("JSON:",json)
+            this.props.event.preview = json.preview
+            this.loadPreview()
+          })
         } else {
           response.text().then(text => {
             this.setState({

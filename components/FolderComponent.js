@@ -13,7 +13,7 @@ class Event {
   highlight=null
   crunch=null
   folder=null
-  
+
   hasOriginals() {
     return (this.left && this.right && this.front)
   }
@@ -44,7 +44,7 @@ export class FolderComponent extends React.Component {
         <td>
         { message ? <Alert variant={variant}>{message}</Alert> : null}
         { events ? events.map(event => {
-            return <EventComponent event={event} box={box} account={account}/>
+            return <EventComponent key={event.prefix} event={event} box={box} account={account}/>
           }) : null}
         </td>
       </tr>
