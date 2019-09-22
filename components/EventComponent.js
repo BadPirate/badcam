@@ -62,16 +62,16 @@ export class EventComponent extends React.Component {
               if (possible) {
                 return box.filesDelete({ path: possible.path_lower })
               }
-            })).then(_, error => {
-              if (error) {
-                this.setState({
-                  message: JSON.stringify(error),
-                  variant: "danger"
-                })
-                return
-              }
+            }))
+            .then(_ => {
               this.setState({
                 invalid: true
+              })
+            })
+            .catch(error => {
+              this.setState({
+                message: JSON.stringify(error),
+                variant: "danger"
               })
             })
           }}>

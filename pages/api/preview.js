@@ -32,11 +32,10 @@ export default (req, res) => {
   .then(_ => {
     return uploadFile(dropbox, target, previewPath)
   })
-  .then(result, error => {
-    if (error) {
-      complete(res, nil, error)
-    } else {
-      complete(res, { preview: result }, error)
-    }
+  .then(result => {
+    complete(res, { preview: result }, null)
+  })
+  .catch(error => {
+    complete(res, null, error)
   })
 }

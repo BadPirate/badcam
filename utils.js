@@ -92,10 +92,10 @@ export function deleteBatch(dropbox, targets) {
 
 export function complete(res, out, error) {
   if (error) {
-    console.log("Error: ",e)
+    console.log("Error: ",error)
     res.setHeader('Content-Type', 'text/plain')
     res.statusCode = 500
-    res.end(e)
+    res.end(error)
     return
   }
   console.log("Success")
