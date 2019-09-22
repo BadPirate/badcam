@@ -9,7 +9,7 @@ export class EventComponent extends React.Component {
     message: "Loading...",
     variant: "info",
     invalid: false,
-    buttons: []
+    generating: false,
   }
 
   render() {
@@ -18,7 +18,7 @@ export class EventComponent extends React.Component {
     let message = this.state.message
     let variant = this.state.variant
     let preview = this.state.preview
-    let buttons = this.state.buttons
+    let buttons = this.buttons()
 
     return (
       <Container>
@@ -33,53 +33,65 @@ export class EventComponent extends React.Component {
     );
   }
 
-  componentDidMount() {
+  buttons() {
     let event = this.props.event
-    
+    let generating = this.state.generating
+
+    let buttons = []
+    if (!generating && event.left && event.right && event.front && !event.preview) {
+      buttons.push(
+        <Button key="generate_preview" onClick={ _ => {
+          this.generatePreview()
+        }}>
+          Generate Preview
+        </Button>
+      )
+    }
+    if (event.left || event.right || event.front || event.highlight || event.crunch || event.preview) {
+      buttons.push(
+        <Button key="delete" variant="danger" onClick={ _ => {
+          this.setState(state => {
+            return {
+              message: "Deleting...",
+              variant: "danger",
+              buttons: []
+            }
+          })
+          let box = this.props.box
+          Promise.all([
+            event.front,
+            event.left,
+            event.right,
+            event.highlight,
+            event.crunch,
+            event.preview
+          ].map(possible => {
+            if (possible) {
+              return box.filesDelete({ path: possible.path_lower })
+            }
+          }))
+          .then(_ => {
+            this.setState({
+              invalid: true
+            })
+          })
+          .catch(error => {
+            this.setState({
+              message: JSON.stringify(error),
+              variant: "danger"
+            })
+          })
+        }}>
+          Delete
+        </Button>
+      )
+    }
+
+    return buttons
+  }
+
+  componentDidMount() {
     this.loadPreview()
-    
-    // Delete Button
-    this.setState(state => {
-      return {
-        buttons: state.buttons.concat(
-          <Button key="delete" variant="danger" onClick={ _ => {
-            this.setState(state => {
-              return {
-                message: "Deleting...",
-                variant: "danger",
-                buttons: []
-              }
-            })
-            let box = this.props.box
-            Promise.all([
-              event.front,
-              event.left,
-              event.right,
-              event.highlight,
-              event.crunch,
-              event.preview
-            ].map(possible => {
-              if (possible) {
-                return box.filesDelete({ path: possible.path_lower })
-              }
-            }))
-            .then(_ => {
-              this.setState({
-                invalid: true
-              })
-            })
-            .catch(error => {
-              this.setState({
-                message: JSON.stringify(error),
-                variant: "danger"
-              })
-            })
-          }}>
-            Delete
-          </Button>
-        )
-      }
-    })
   }
 
   loadPreview() {
@@ -97,7 +109,8 @@ export class EventComponent extends React.Component {
         this.setState({
           message: null,
           variant: null,
-          preview: result
+          preview: result,
+          generating: false
         })
       })
      } else if (event.preview) {
@@ -109,29 +122,21 @@ export class EventComponent extends React.Component {
          this.setState({
            message: null,
            variant: null,
-           preview: result
+           preview: result,
+           generating: false
          })
        })
      } else {
        // No preview
-       if (event.hasOriginals()) {
-         this.setState( state => {
-           return {
-             message: null,
-             variant: null,
-             buttons: state.buttons.concat(
-               <Button key="generate_preview" onClick={ element => {
-                 this.generatePreview()
-               }}>
-                 Generate Preview
-               </Button>
-             )
-           }
+       if (!event.hasOriginals()) {
+         this.setState({
+           message: "Incomplete (Still uploading?)",
+           variant: "warning"
          })
        } else {
          this.setState({
-           message: "Incomplete",
-           variant: "warning"
+           message: null,
+           variant: null
          })
        }
      }
@@ -146,9 +151,7 @@ export class EventComponent extends React.Component {
       return {
         message: "Generating Preview...",
         variant: "info",
-        buttons: state.buttons.filter(button => {
-          button.key !== "generate_preview"
-        })
+        generating: true
       }
     })
     var size = 0
@@ -186,7 +189,8 @@ export class EventComponent extends React.Component {
           response.text().then(text => {
             this.setState({
               message: `Error - ${text}`,
-              variant: "danger"
+              variant: "danger",
+              generating: false
             })
           })
         }
