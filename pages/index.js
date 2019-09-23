@@ -9,7 +9,6 @@ class App extends React.Component {
     return {
       config: {
         clientId: process.env.REACT_APP_DROPBOX_CLIENT_ID,
-        token: ctx.query.access_token
       }
     }
   }
@@ -58,17 +57,23 @@ class App extends React.Component {
 
   componentDidMount() {
     let account = this.state.account
-    let token = this.state.token
+    var token = null
+    let search = window.location.href.match(/\#access_token\=([^&]*)/)
+    if (search) {
+      token = search[1]
+      console.log("token",token) 
+    } else {
+      console.log("No token",window.location.href)
+    }
 
     if (!this.box) {
       let config = this.props.config
-
       this.box = new Dropbox(config);
       this.forceUpdate()
 
       if (token) {
         localStorage.setItem('access',token)
-        this.forceUpdate()
+        config.token = token
       } else {
         token = localStorage.getItem('access')
       }
