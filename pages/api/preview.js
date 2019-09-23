@@ -15,21 +15,22 @@ export default (req, res) => {
   
   res.statusCode = 500 // default
   
-  var previewPath = null
   let dropbox = dropboxV2Api.authenticate({
     token: token
   })
   
   prepareFolder(body).then( ({ frontPath, leftPath, rightPath, vidDir }) => {
-    console.log("FRONTPATH:",frontPath)
-    previewPath = `${vidDir}/${prefix}-preview.png`
+    let previewPath = `${vidDir}/${prefix}-preview.png`
     return pexec(`if [ ! -f ${previewPath} ]; then ffmpeg -y -i ${rightPath} -i ${frontPath} -i ${leftPath} -nostdin -loglevel panic -filter_complex \
     "[0:v][1:v]hstack[lf];[lf][2:v]hstack[lfr];[lfr]scale=w=600:h=150" \
      -vframes 1 ${previewPath}; fi`).then(_ => {
        console.log("Preview Generated:",previewPath)
+     }).then(_ => {
+       return previewPath
      })
   })
-  .then(_ => {
+  .then(previewPath => {
+    console.log("Uploading",previewPath)
     return uploadFile(dropbox, `${folder}/${prefix}-preview.png`, previewPath)
   })
   .then(result => {

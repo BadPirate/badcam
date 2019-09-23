@@ -90,6 +90,8 @@ export default (req, res) => {
       let { frontPath, leftPath, rightPath, vidDir } = info
       status("Crunching...")
       // Generate crunch and highlight
+      let highlightTemp = `${vidDir}/${prefix}-highlight-temp.gif`
+      let crunchTemp = `${vidDir}/${prefix}-crunch-temp.mp4`
       let highlightPath = `${vidDir}/${prefix}-highlight.gif`
       let crunchPath = `${vidDir}/${prefix}-crunch.mp4`
       info.crunchPath = crunchPath
@@ -97,7 +99,8 @@ export default (req, res) => {
       return pexec(`if [ ! -f ${crunchPath} -a ! -f ${highlightPath} ]; then \
         ffmpeg -y -i ${rightPath} -i ${frontPath} -i ${leftPath} -nostdin -filter_complex \
         "[0:v][1:v]hstack[lf];[lf][2:v]hstack[lfr];[lfr]split[full][f];[f]select=gt(scene\\,0.003),setpts=N/(16*TB)[bh];[bh]scale=w=600:h=150[hslow];[hslow]setpts=0.25*PTS[highlight]" \
-        -map "[full]" -pix_fmt yuv420p ${crunchPath} -map "[highlight]" -pix_fmt yuv420p ${highlightPath}; fi
+        -map "[full]" -pix_fmt yuv420p ${crunchTemp} -map "[highlight]" -pix_fmt yuv420p ${highlightTemp}; \n
+        mv ${crunchTemp} ${crunchPath}; mv ${highlightTemp} ${highlightPath}; fi
       `).then(_ => {
         return info
       })
@@ -130,6 +133,7 @@ export default (req, res) => {
   let response = {
     queue: pos
   }
+  
   if (queue.s.has(prefix)) {
     response.status = queue.s.get(prefix)
   }

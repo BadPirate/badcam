@@ -7,16 +7,16 @@ export function pexec(cmd) {
   return new Promise((resolve, reject) => {
     exec(cmd, (error, stdout, stderr) => {
       if (error) {
-        reject(error);
+        reject(error)
       }
       else {
         resolve({
           stdout: stdout.replace(/^\s+|\s+$/g, ''),
           stderr: stderr.replace(/^\s+|\s+$/g, '')
-        });
+        })
       }
-    });
-  });
+    })
+  })
 }
 
 export function prepareFolder({ prefix, user, front, left, right, size }) {
@@ -34,7 +34,6 @@ export function prepareFolder({ prefix, user, front, left, right, size }) {
   })
   .then(({stdout}) => {
     let spaceAvailable = stdout
-    console.log("Space available:",spaceAvailable)
     if (spaceAvailable < size) {
       res.statusCode = 507
       throw "Insufficient server space"
