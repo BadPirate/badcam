@@ -10,4 +10,8 @@ module.exports = withCSS({
   cssLoaderOptions: {
     url: false
   },
+  onDemandEntries: {
+    // period (in ms) where the server will keep pages in the buffer
+    maxInactiveAge: 600 * 1000,
+  },
 })
