@@ -17,6 +17,30 @@ class Event {
   hasOriginals() {
     return (this.left && this.right && this.front)
   }
+
+  links(box) {
+    var size = 0
+    return Promise.all([this.front, this.left, this.right].map(resource => {
+      size += resource.size
+      return new Promise( (resolve, _) => {
+        box.filesGetTemporaryLink({path: resource.path_lower}).then( result => {
+          resolve(result.link)
+        })
+      })
+    }))
+    .then(result => {
+      let [front,left,right] = result
+      return {
+        front: front,
+        left: left,
+        right: right,
+        size: size,
+        prefix: this.prefix,
+        token: localStorage.getItem('access'),
+        folder: this.folder
+      }
+    })
+  }
 }
 
 export class FolderComponent extends React.Component {

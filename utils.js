@@ -69,8 +69,9 @@ export function uploadFile(dropbox, target, path) {
       },
       readStream: fs.createReadStream(path)
     }, (err, result, _) => {
-      if (err) {
-        reject(`Dropbox Upload Error: ${err.error_summary}`)
+      console.log("Dropbox upload result",err,result)
+      if (typeof err !== 'undefined' && err !== null) {
+        reject(`Dropbox Upload Error: ${JSON.stringify(err)}`)
       } else {
         resolve(result)
       }
@@ -78,16 +79,23 @@ export function uploadFile(dropbox, target, path) {
 }
 
 export function deleteBatch(dropbox, targets) {
-  dropbox({
-    resource: 'files/delete_batch',
-    parameters: {
-      entries: targets.map(target => {
-        return {
-          path: target
-        }
-      })
-    }
-  })
+  return new Promise((resolve, reject) => {
+    dropbox({
+      resource: 'files/delete_batch',
+      parameters: {
+        entries: targets.map(target => {
+          return {
+            path: target
+          }
+        })
+      }
+    }, (err, result, _) => {
+      if (err) {
+        reject(`Dropbox Upload Error: ${err.error_summary}`)
+      } else {
+        resolve(result)
+      }
+  })})
 }
 
 export function complete(res, out, error) {

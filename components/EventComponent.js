@@ -36,17 +36,40 @@ export class EventComponent extends React.Component {
   buttons() {
     let event = this.props.event
     let generating = this.state.generating
+    let box = this.props.box
 
     let buttons = []
-    if (!generating && event.left && event.right && event.front && !event.preview) {
+    if (!generating && event.hasOriginals() && (!event.preview && !event.highlight)) {
       buttons.push(
         <Button key="generate_preview" onClick={ _ => {
           this.generatePreview()
         }}>
-          Generate Preview
+          Quick Preview
         </Button>
       )
     }
+    if (!generating && event.hasOriginals() && !event.crunch) {
+      buttons.push(
+        <Button key="crunch" onClick={ _ => {
+          this.crunch()
+        }}>
+          Crunch
+        </Button>
+      )
+    }
+    ['left','right','front','crunch'].forEach(name => {
+      let vid = event[name]
+      if (!vid) return
+      buttons.push(
+        <Button key={name} variant="secondary" onClick={_ => {
+          box.filesGetTemporaryLink({ path: vid.path_lower }).then(result => {
+            window.location.href = result.link
+          })
+        }}>
+          Download {name}
+        </Button>
+      )
+    })
     if (event.left || event.right || event.front || event.highlight || event.crunch || event.preview) {
       buttons.push(
         <Button key="delete" variant="danger" onClick={ _ => {
@@ -142,42 +165,85 @@ export class EventComponent extends React.Component {
      }
   }
 
+  crunch() {
+    let box = this.props.box
+    let event = this.props.event
+    let account = this.props.account
+
+    this.setState({
+      message: "Crunching... (this could take a while)",
+      variant: "info",
+      generating: true
+    })
+    this.crunchCall(event, box, account);
+  }
+  
+  crunchCall(event, box, account) {
+    event.links(box).then(info => {
+      info.user = account.account_id;
+      fetch('api/crunch', {
+        method: "POST",
+        body: JSON.stringify(info)
+      })
+        .then(response => {
+          if (response.status == 206) {
+            response.json().then(({ queue, status }) => {
+              let message = status || `Enqueued - Position ${queue}`
+              this.setState({
+                message: message
+              });
+              setTimeout(_ => {
+                this.crunchCall(event, box, account)
+              }, 5000);
+            });
+          }
+          else if (response.status == 200) {
+            response.json().then(json => {
+              let { highlight, crunch } = json;
+              this.props.event.highlight = highlight;
+              this.props.event.crunch = crunch;
+              this.props.event.left = null;
+              this.props.event.right = null;
+              this.props.event.front = null;
+              this.loadPreview();
+            });
+          }
+          else {
+            response.text().then(text => {
+              this.setState({
+                message: `Error - ${text}`,
+                variant: "danger",
+                generating: false
+              });
+            });
+          }
+        })
+        .catch(error => {
+          this.setState({
+            message: JSON.stringify(error),
+            variant: "danger",
+            generating: false
+          });
+        });
+    });
+  }
+
   generatePreview() {
     let box = this.props.box
     let event = this.props.event
     let account = this.props.account
 
-    this.setState(state => {
-      return {
+    this.setState({
         message: "Generating Preview...",
         variant: "info",
         generating: true
-      }
     })
-    var size = 0
-    let uploadPath = `${event.folder}/${event.prefix}-preview.png`
-    console.log("UPLOADPATH",uploadPath)
-    Promise.all([event.front, event.left, event.right].map(resource => {
-      size += resource.size
-      return new Promise( (resolve, _) => {
-        box.filesGetTemporaryLink({path: resource.path_lower}).then( result => {
-          resolve(result.link)
-        })
-      })
-    })).then(links => {
-      let [front, left, right] = links
+    event.links(box)
+    .then(result => {
+      result.user = account.account_id
       fetch('api/preview', {
         method: "POST",
-        body: JSON.stringify({
-          front: front,
-          left: left,
-          right: right,
-          size: size,
-          prefix: event.prefix,
-          user: account.account_id,
-          token: localStorage.getItem('access'),
-          target: uploadPath
-        })
+        body: JSON.stringify(result)
       }).then((response) => {
         if (response.status == 200) {
           response.json().then(json => {
@@ -198,7 +264,8 @@ export class EventComponent extends React.Component {
         console.log("FAILURE",error)
         this.setState({
           message: JSON.stringify(error),
-          variant: "danger"
+          variant: "danger",
+          generating: false
         })
       })
     })

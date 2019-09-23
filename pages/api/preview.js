@@ -10,7 +10,7 @@ export default (req, res) => {
   let {
     prefix,
     token,
-    target
+    folder
   } = body
   
   res.statusCode = 500 // default
@@ -30,7 +30,7 @@ export default (req, res) => {
      })
   })
   .then(_ => {
-    return uploadFile(dropbox, target, previewPath)
+    return uploadFile(dropbox, `${folder}/${prefix}-preview.png`, previewPath)
   })
   .then(result => {
     complete(res, { preview: result }, null)

@@ -1,29 +1,51 @@
-import { pexec, prepareFolder, uploadFile, complete } from "../../utils";
+import { pexec, prepareFolder, uploadFile, complete, deleteBatch } from "../../utils";
 import dropboxV2Api from 'dropbox-v2-api'
 
 class Queue {
   q = []
+  c = new Map()
+  s = new Map()
 
   add(identifier, functionReturningPromise) {
     let existing = this.q.findIndex(([someId, _]) => {
       return someId === identifier
     })
-    if ( existing !== -1 ) return existing // Already have one in q
+    if ( existing !== -1 ) {
+      return existing+1 // Already have one in q
+    }
+    console.log("Enqueing",identifier)
     this.q.push([identifier, functionReturningPromise])
     if (this.q.length === 1) {
       this.next()
     }
+    console.log("Position",this.q.length)
     return this.q.length
   }
 
   next() {
-    let [_, next] = this.q[0]
-    if (next) {
-      next().finally(_ => {
-        this.q.shift()
-        this.next()
-      })
+    let first = this.q[0]
+    if (!first) {
+      console.log("Queue complete")
+      return
     }
+    let [identifier, op] = this.q[0]
+    console.log("Starting",identifier)
+    op(message => {
+      console.log(`Status [${identifier}]: ${message}`)
+      this.s.set(identifier, message)
+    })
+    .then(result => {
+      console.log(`Queue ${identifier} - SUCCESS`)
+      this.c.set(identifier, [result, null] )
+      this.q.shift()
+      this.next()
+    })
+    .catch( error => {
+      console.log(`Queue ${identifier} - Failure '${error}'`)
+      this.c.set(identifier, [null, error])
+      this.q.shift()
+      this.next()
+    })
   }
 }
 
@@ -35,13 +57,30 @@ export default (req, res) => {
   } = req
   let body = JSON.parse(bodyJSON)
 
-  queue.add(_ => {
-    let {
-      prefix,
-      token,
-      folder
-    } = body
+  let {
+    prefix,
+    token,
+    folder
+  } = body
 
+  if (queue.c.has(prefix)) {
+    let [result, error] = queue.c.get(prefix)
+    if (error) {
+      console.log("ERROR",error)
+      complete(res,null,JSON.stringify(error))
+    } else {
+      let {highlight, crunch} = result
+      console.log("SUCCESS")
+      complete(res, { 
+        highlight: highlight,
+        crunch: crunch
+      }, error)
+    }
+    return
+  }
+
+  let pos = queue.add(prefix, status => {
+    status("Downloading...")
     let dropbox = dropboxV2Api.authenticate({
       token: token
     })
@@ -49,21 +88,23 @@ export default (req, res) => {
     return prepareFolder(body)
     .then(info => {
       let { frontPath, leftPath, rightPath, vidDir } = info
+      status("Crunching...")
       // Generate crunch and highlight
       let highlightPath = `${vidDir}/${prefix}-highlight.gif`
       let crunchPath = `${vidDir}/${prefix}-crunch.mp4`
-      return pexec(`
-        ffmpeg -y -i ${rightPath} -i ${frontPath} -i ${leftPath} -nostdin -loglevel panic -filter_complex \
-        "[0:v][1:v]hstack[lf];[lf][2:v]hstack[lfr];[lfr]split[full][f];[f]select=gt(scene\,0.003),setpts=N/(16*TB)[bh];[bh]scale=w=600:h=150[highlight]" \
-        -map "[full]" -pix_fmt yuv420p ${crunchPath} -map "[highlight]" -pix_fmt yuv420p ${highlightPath}
+      info.crunchPath = crunchPath
+      info.highlightPath = highlightPath
+      return pexec(`if [ ! -f ${crunchPath} -a ! -f ${highlightPath} ]; then \
+        ffmpeg -y -i ${rightPath} -i ${frontPath} -i ${leftPath} -nostdin -filter_complex \
+        "[0:v][1:v]hstack[lf];[lf][2:v]hstack[lfr];[lfr]split[full][f];[f]select=gt(scene\\,0.003),setpts=N/(16*TB)[bh];[bh]scale=w=600:h=150[hslow];[hslow]setpts=0.25*PTS[highlight]" \
+        -map "[full]" -pix_fmt yuv420p ${crunchPath} -map "[highlight]" -pix_fmt yuv420p ${highlightPath}; fi
       `).then(_ => {
-        info.crunchPath = crunchPath
-        info.highlightPath = highlightPath
         return info
       })
     })
     .then( info => {
       let { highlightPath, crunchPath } = info
+      status("Uploading result...")
       // Upload crunch and highlight
       return Promise.all([
         uploadFile(dropbox,`${folder}/${prefix}-highlight.gif`,highlightPath),
@@ -76,21 +117,21 @@ export default (req, res) => {
     })
     .then(info => {
       let { front, left, right } = body
+      status("Deleting old files...")
       return deleteBatch(dropbox,[front,left,right])
       .then(_ => {
         return info
       })
     })
-    .then(info, error => {
-      if (error) {
-        complete(res,null,error)
-      } else {
-        let {highlight, crunch}  = info
-        complete(res, { 
-          highlight: highlight,
-          crunch: crunch
-        }, error)
-      }
-    })
   })
+
+  res.statusCode = 206
+  res.setHeader('Content-Type', 'application/json') 
+  let response = {
+    queue: pos
+  }
+  if (queue.s.has(prefix)) {
+    response.status = queue.s.get(prefix)
+  }
+  res.end(JSON.stringify(response))
 }
