@@ -194,7 +194,7 @@ export class EventComponent extends React.Component {
               });
               setTimeout(_ => {
                 this.crunchCall(event, box, account)
-              }, 5000);
+              }, 1000);
             });
           }
           else if (response.status == 200) {
