@@ -120,7 +120,6 @@ export default (req, res) => {
       })
     })
     .then(info => {
-      let { front, left, right } = body
       status("Deleting old files...")
       return deleteBatch(dropbox,["front","left_repeater","right_repeater"].map(suffix => {
         return `${folder}/${prefix}-${suffix}.mp4`

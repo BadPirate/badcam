@@ -205,10 +205,6 @@ export class EventComponent extends React.Component {
               this.props.event.left = null;
               this.props.event.right = null;
               this.props.event.front = null;
-              this.setState({
-                message: null,
-                variant: null
-              })
               this.loadPreview();
             });
           }
