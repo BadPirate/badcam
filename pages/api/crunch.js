@@ -68,6 +68,7 @@ export default (req, res) => {
     if (error) {
       console.log("ERROR",error)
       complete(res,null,JSON.stringify(error))
+      queue.c.delete(prefix)
     } else {
       let {highlight, crunch} = result
       console.log("SUCCESS")
@@ -133,7 +134,7 @@ export default (req, res) => {
   let response = {
     queue: pos
   }
-  
+
   if (queue.s.has(prefix)) {
     response.status = queue.s.get(prefix)
   }
