@@ -69,9 +69,9 @@ export function uploadFile(dropbox, target, path) {
       },
       readStream: fs.createReadStream(path)
     }, (err, result, _) => {
-      console.log("Dropbox upload result","err",err,"typeof",typeof err,"result",result)
-      if (err != null) {
-        reject(`Dropbox Upload Error: ${JSON.stringify(err)}`)
+      console.log("Upload result:", err, result)
+      if (err) {
+        reject(`Dropbox Upload Error: ${err}`)
       } else {
         resolve(result)
       }
@@ -91,7 +91,8 @@ export function deleteBatch(dropbox, targets) {
       }
     }, (err, result, _) => {
       if (err) {
-        reject(`Dropbox Upload Error: ${err.error_summary}`)
+        console.log("Delete rejection",err)
+        reject(`Dropbox Delete Error: ${err}`)
       } else {
         resolve(result)
       }
