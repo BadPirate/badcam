@@ -70,7 +70,7 @@ export function uploadFile(dropbox, target, path) {
       readStream: fs.createReadStream(path)
     }, (err, result, _) => {
       console.log("Dropbox upload result","err",err,"typeof",typeof err,"result",result)
-      if (err && JSON.stringify(err)) {
+      if (err != null) {
         reject(`Dropbox Upload Error: ${JSON.stringify(err)}`)
       } else {
         resolve(result)
