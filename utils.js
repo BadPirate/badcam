@@ -4,6 +4,7 @@ import fs from 'fs'
 let basedir = pexec('r=$(dirname $(mktemp -u))"/badcam";mkdir -p $r;echo $r')
 
 export function pexec(cmd) {
+  console.log("[Executing] ",cmd)
   return new Promise((resolve, reject) => {
     exec(cmd, (error, stdout, stderr) => {
       if (error) {
