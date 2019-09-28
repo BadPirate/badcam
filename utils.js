@@ -71,7 +71,7 @@ export function uploadFile(dropbox, target, path) {
     }, (err, result, _) => {
       console.log("Upload result:", err, result)
       if (err) {
-        reject(`Dropbox Upload Error: ${err}`)
+        reject(`Dropbox Upload Error: ${JSON.stringify(err) || err}`)
       } else {
         resolve(result)
       }
@@ -92,7 +92,7 @@ export function deleteBatch(dropbox, targets) {
     }, (err, result, _) => {
       if (err) {
         console.log("Delete rejection",err)
-        reject(`Dropbox Delete Error: ${err}`)
+        reject(`Dropbox Delete Error: ${JSON.stringify(err) || err}`)
       } else {
         resolve(result)
       }
