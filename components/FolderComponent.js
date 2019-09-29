@@ -68,7 +68,7 @@ export class FolderComponent extends React.Component {
       return <EventComponent key={event.prefix} event={event} box={box} account={account} showIncomplete={showIncomplete}/>
     }) : null
 
-    if (!showIncomplete && !hasEvent) return null
+    if (!hasEvent) return null
     if (folder[".tag"] != "folder") return null
     let regex = /(\d\d\d\d)-(\d\d)-(\d\d)_(\d\d)-(\d\d)-(\d\d)/
     let nameParts = regex.exec(folder.name)
