@@ -19,7 +19,7 @@ export class EventComponent extends React.Component {
     let variant = this.state.variant
     let preview = this.state.preview
     let buttons = this.buttons()
-
+    
     return (
       <Container>
         <p>{event.prefix}</p>
@@ -154,7 +154,7 @@ export class EventComponent extends React.Component {
        if (!event.hasOriginals()) {
          this.setState({
            message: "Incomplete (Still uploading?)",
-           variant: "warning"
+           variant: "warning",
          })
        } else {
          this.setState({

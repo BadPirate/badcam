@@ -18,6 +18,10 @@ class Event {
     return (this.left && this.right && this.front)
   }
 
+  complete() {
+    return (this.hasOriginals() || this.crunch)
+  }
+
   links(box) {
     var size = 0
     return Promise.all([this.front, this.left, this.right].map(resource => {
@@ -54,11 +58,17 @@ export class FolderComponent extends React.Component {
     let folder = this.props.folder
     let message = this.state.message
     let variant = this.state.variant
-    let events = this.state.events
     let box = this.props.box
     let account = this.props.account
+    let showIncomplete = this.props.showIncomplete
+    var hasEvent = false
+    let events = this.state.events ? this.state.events.map(event => {
+      if (!showIncomplete && !event.complete()) return null
+      hasEvent = true
+      return <EventComponent key={event.prefix} event={event} box={box} account={account} showIncomplete={showIncomplete}/>
+    }) : null
 
-    if (events && events.length == 0) return null
+    if (!showIncomplete && !hasEvent) return null
     if (folder[".tag"] != "folder") return null
     let regex = /(\d\d\d\d)-(\d\d)-(\d\d)_(\d\d)-(\d\d)-(\d\d)/
     let nameParts = regex.exec(folder.name)
@@ -67,9 +77,7 @@ export class FolderComponent extends React.Component {
       <tr>
         <td>
         { message ? <Alert variant={variant}>{message}</Alert> : null}
-        { events ? events.map(event => {
-            return <EventComponent key={event.prefix} event={event} box={box} account={account}/>
-          }) : null}
+        { events }
         </td>
       </tr>
     );
