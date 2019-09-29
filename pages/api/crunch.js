@@ -128,6 +128,14 @@ export default (req, res) => {
         return info
       })
     })
+    .then(info => {
+      let {vidDir} = info
+      if (vidDir) {
+        status("Cleaning up server...")
+        return pexec(`rm -rf ${vidDir}`).then(_ => {return info})
+      }
+      return info
+    })
   })
 
   res.statusCode = 206
