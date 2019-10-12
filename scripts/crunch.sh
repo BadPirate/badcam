@@ -145,17 +145,12 @@ if [[ $_arg_video =~ (.*\/)([0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2
     fi
   done
   _preview=${_path}${_prefix}-preview.png
-  echo "  Generating Preview - $_preview..."
-  ffmpeg -y -i $_right -i $_front -i $_left -nostdin -loglevel panic -filter_complex \
-    "[0:v][1:v]hstack[lf];[lf][2:v]hstack[lfr];[lfr]scale=w=600:h=150" \
-     -vframes 1 $_preview
   echo "  Crunching - $_prefix..."
   _crunch=${_path}${_prefix}-crunch.mp4
-  _highlight=${_path}${_prefix}-highlight.mp4
-  ffmpeg -y -i $_right -i $_front -i $_left -nostdin -loglevel panic -filter_complex \
-    "[0:v][1:v]hstack[lf];[lf][2:v]hstack[lfr];[lfr]split[full][f];[f]select=gt(scene\,$_arg_motion),setpts=N/(16*TB)[highlight]" \
-     -map "[full]" -pix_fmt yuv420p $_crunch \
-     -map "[highlight]" -pix_fmt yuv420p $_highlight
+  _highlight=${_path}${_prefix}-highlight.gif
+  ffmpeg -y -i $_right -i $_front -i $_left -nostdin -filter_complex \
+    "[0:v][1:v]hstack[lf];[lf][2:v]hstack[lfr];[lfr]split[full][f];[f]select=gt(scene\,$_arg_motion),setpts=N/(16*TB)[bh];[bh]scale=w=600:h=150[hslow];[hslow]setpts=0.25*PTS[highlight]" \
+    -map "[full]" -pix_fmt yuv420p $_crunch -map "[highlight]" -pix_fmt yuv420p $_highlight
   if [ $? -eq 0 ]; then
   _lengthc=$(printf "%.0f" $(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $_crunch))
     if [ $_lengthc -lt $_target_length ]; then
