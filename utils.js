@@ -3,20 +3,31 @@ import fs from 'fs'
 
 let basedir = pexec('r=$(dirname $(mktemp -u))"/badcam";mkdir -p $r;echo $r')
 
-export function pexec(cmd) {
+export function pexec(cmd, fail = "") {
+  if (!fail) fail = `${cmd} failed`
   console.log("[Executing] ",cmd)
   return new Promise((resolve, reject) => {
-    exec(cmd, (error, stdout, stderr) => {
-      if (error) {
-        reject(error)
-      }
-      else {
-        resolve({
-          stdout: stdout.replace(/^\s+|\s+$/g, ''),
-          stderr: stderr.replace(/^\s+|\s+$/g, '')
-        })
-      }
-    })
+    try {
+      exec(`${cmd} || (echo "${fail}" >&2; exit 2)`, (error, stdout, stderr) => {
+        if (stderr && error) {
+          reject({
+            error: stderr,
+            cmd: cmd
+          })
+        }
+        if (error) {
+          reject(error)
+        }
+        else {
+          resolve({
+            stdout: stdout.replace(/^\s+|\s+$/g, ''),
+            stderr: stderr.replace(/^\s+|\s+$/g, '')
+          })
+        }
+      }) 
+    } catch (error) {
+      reject(error)
+    }
   })
 }
 
@@ -45,7 +56,7 @@ export function prepareFolder({ prefix, user, front, left, right, size }) {
       ["right_repeater", right]
     ].map(([file, url]) => {
       let filepath = `${vidDir}/${prefix}-${file}.mp4`
-      return pexec(`if [ ! -f ${filepath} ]; then curl ${url} --output ${filepath}; fi`)
+      return pexec(`if [ ! -f ${filepath} ]; then curl -s ${url} --output ${filepath}; fi`)
       .then(_ => { return filepath })
     }))
   })
@@ -62,21 +73,26 @@ export function prepareFolder({ prefix, user, front, left, right, size }) {
 
 export function uploadFile(dropbox, target, path) {
   return new Promise((resolve, reject) => {
-    dropbox({
-      resource: 'files/upload',
-      parameters: {
-          path: target
-      },
-      readStream: fs.createReadStream(path)
-    }, (err, result, _) => {
-      console.log("Upload result:", err, result)
-      if (err) {
-        reject(`Dropbox Upload Error: ${JSON.stringify(err) || err}`)
-      } else {
-        resolve(result)
-      }
-  })})
-}
+    try {
+      dropbox({
+        resource: 'files/upload',
+        parameters: {
+            path: target
+        },
+        readStream: fs.createReadStream(path)
+      }, (err, result, _) => {
+        console.log("Upload result:", err, result)
+        if (err) {
+          reject(`Dropbox Upload Error: ${JSON.stringify(err) || err}`)
+        } else {
+          resolve(result)
+        }
+      })
+    } catch (e) {
+      reject(e)
+    }
+    
+})}
 
 export function deleteBatch(dropbox, targets) {
   return new Promise((resolve, reject) => {
@@ -99,17 +115,27 @@ export function deleteBatch(dropbox, targets) {
   })})
 }
 
-export function complete(res, out, error) {
-  if (error) {
-    console.log("Error: ",error)
-    res.setHeader('Content-Type', 'text/plain')
-    res.statusCode = 500
-    res.end(error)
-    return
-  }
+export function success(success,res) {
   console.log("Success")
-  res.statusCode = 200
-  res.setHeader('Content-Type', 'application/json') 
-  console.log("OUT:",out)
-  res.end(JSON.stringify(out))
+  res.status(200).json(success)
 }
+
+export function failure(error,res) {
+  console.log("Error", error)
+  res.status(500).json({
+    result: "Error",
+    error: error
+  })
+}
+
+export function verify(path) {
+  console.log("Checking",path)
+  return new Promise((resolve, reject) => {
+    fs.access(path, fs.F_OK, (err) => {
+      if (err) {
+        reject(err)
+      } else {
+        resolve(path)
+      }
+    })})
+} 

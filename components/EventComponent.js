@@ -66,7 +66,7 @@ export class EventComponent extends React.Component {
             window.location.href = result.link
           })
         }}>
-          Download {name}
+          Download {name} ({humanFileSize(vid.size)})
         </Button>
       )
     })
@@ -209,13 +209,7 @@ export class EventComponent extends React.Component {
             });
           }
           else {
-            response.text().then(text => {
-              this.setState({
-                message: `Error - ${text}`,
-                variant: "danger",
-                generating: false
-              });
-            });
+            this.handleErrorResponse(response);
           }
         })
         .catch(error => {
@@ -225,6 +219,19 @@ export class EventComponent extends React.Component {
             generating: false
           });
         });
+    });
+  }
+
+  handleErrorResponse(response) {
+    response.json().then(body => {
+      this.setState({
+        message: [<p>Error</p>,
+        ((body.error && body.error.error && body.error.cmd) ? [<code>{body.error.error}</code>,<p>Command:</p>,<code>{body.error.cmd}</code>] : null) 
+        || (body.error ? <code>body.error = {JSON.stringify(body.error, null, 2)}</code> : null)
+        || <code>body = {JSON.stringify(body, null, 2)}</code>],
+        variant: "danger",
+        generating: false
+      });
     });
   }
 
@@ -252,13 +259,7 @@ export class EventComponent extends React.Component {
             this.loadPreview()
           })
         } else {
-          response.text().then(text => {
-            this.setState({
-              message: `Error - ${text}`,
-              variant: "danger",
-              generating: false
-            })
-          })
+          this.handleErrorResponse(response)
         }
       }).catch(error => {
         console.log("FAILURE",error)
@@ -270,4 +271,20 @@ export class EventComponent extends React.Component {
       })
     })
   }
+}
+
+function humanFileSize(bytes, si = true) {
+  var thresh = si ? 1000 : 1024;
+  if(Math.abs(bytes) < thresh) {
+      return bytes + ' B';
+  }
+  var units = si
+      ? ['kB','MB','GB','TB','PB','EB','ZB','YB']
+      : ['KiB','MiB','GiB','TiB','PiB','EiB','ZiB','YiB'];
+  var u = -1;
+  do {
+      bytes /= thresh;
+      ++u;
+  } while(Math.abs(bytes) >= thresh && u < units.length - 1);
+  return bytes.toFixed(1)+' '+units[u];
 }

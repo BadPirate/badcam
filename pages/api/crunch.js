@@ -1,4 +1,4 @@
-import { pexec, prepareFolder, uploadFile, complete, deleteBatch } from "../../utils";
+import { pexec, prepareFolder, uploadFile, deleteBatch, failure, success } from "../../utils";
 import dropboxV2Api from 'dropbox-v2-api'
 
 class Queue {
@@ -67,15 +67,15 @@ export default (req, res) => {
     let [result, error] = queue.c.get(prefix)
     if (error) {
       console.log("ERROR",error)
-      complete(res,null,JSON.stringify(error))
       queue.c.delete(prefix)
+      failure(error,res)
     } else {
       let {highlight, crunch} = result
       console.log("SUCCESS")
-      complete(res, { 
+      success({ 
         highlight: highlight,
         crunch: crunch
-      }, error)
+      }, res)
     }
     return
   }
@@ -86,9 +86,21 @@ export default (req, res) => {
       token: token
     })
 
+    var prepareInfo
+    var shrunkPaths = []
     return prepareFolder(body)
     .then(info => {
-      let { frontPath, leftPath, rightPath, vidDir } = info
+      prepareInfo = info
+      status("Compressing...")
+      return compress(status, prepareInfo.leftPath, shrunkPaths)
+    }).then(_ => {
+      return compress(status, prepareInfo.frontPath, shrunkPaths)
+    }).then(_ => {
+      return compress(status, prepareInfo.rightPath, shrunkPaths)
+    })
+    .then(_ => {
+      let info = prepareInfo
+      let {vidDir} = info
       status("Crunching...")
       // Generate crunch and highlight
       let highlightTemp = `${vidDir}/${prefix}-highlight-temp.gif`
@@ -97,12 +109,12 @@ export default (req, res) => {
       let crunchPath = `${vidDir}/${prefix}-crunch.mp4`
       info.crunchPath = crunchPath
       info.highlightPath = highlightPath
-      return pexec(`if [ ! -f ${crunchPath} -a ! -f ${highlightPath} ]; then \
-        ffmpeg -y -i ${rightPath} -i ${frontPath} -i ${leftPath} -nostdin -filter_complex \
+      return pexec(`if [ ! ${crunchPath} -a ! -f ${highlightPath} ]; then exit; fi; \
+        ffmpeg -hide_banner -y -i ${shrunkPaths[0]} -i ${shrunkPaths[1]} -i ${shrunkPaths[2]} -nostdin -filter_complex \
         "[0:v][1:v]hstack[lf];[lf][2:v]hstack[lfr];[lfr]split[full][f];[f]select=gt(scene\\,0.003),setpts=N/(16*TB)[bh];[bh]scale=w=600:h=150[hslow];[hslow]setpts=0.25*PTS[highlight]" \
-        -map "[full]" -pix_fmt yuv420p ${crunchTemp} -map "[highlight]" -pix_fmt yuv420p ${highlightTemp}; \n
-        mv ${crunchTemp} ${crunchPath}; mv ${highlightTemp} ${highlightPath}; fi
-      `).then(_ => {
+        -map "[full]" -pix_fmt yuv420p ${crunchTemp} -map "[highlight]" -pix_fmt yuv420p ${highlightTemp} \
+        || (echo "Unable to crunch" >&2; exit 1); \
+        mv ${crunchTemp} ${crunchPath}; mv ${highlightTemp} ${highlightPath}`, "No crunch output file present").then(_ => {
         return info
       })
     })
@@ -138,14 +150,20 @@ export default (req, res) => {
     })
   })
 
-  res.statusCode = 206
-  res.setHeader('Content-Type', 'application/json') 
-  let response = {
-    queue: pos
-  }
-
-  if (queue.s.has(prefix)) {
-    response.status = queue.s.get(prefix)
-  }
-  res.end(JSON.stringify(response))
+  res.status(206).json({
+    queue: pos,
+    status: queue.s.has(prefix) ? queue.s.get(prefix) : `Queued ${pos}`
+  })
 }
+
+async function compress(status, path, shrunkPaths) {
+  status(`Compressing ${path}`);
+  let shrunk = `${path}.shrunk.mp4`;
+  let temp = `${path}.shrunk.temp.mp4`;
+  shrunkPaths.push(shrunk);
+  return await pexec(`if [ -f "${shrunk}" ]; then exit; fi
+          ffmpeg -i "${path}" -hide_banner -nostdin -loglevel panic -s 320x240 -c:a copy "${temp}" \
+          || (echo "Unable to compress" >&2; exit 1)
+          mv "${temp}" "${shrunk}"`, "No compress output file");
+}
+

@@ -19,7 +19,7 @@ class Event {
   }
 
   complete() {
-    return (this.hasOriginals() || this.crunch)
+    return (this.hasOriginals() || this.highlight)
   }
 
   links(box) {
