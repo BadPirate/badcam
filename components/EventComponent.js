@@ -227,6 +227,7 @@ export class EventComponent extends React.Component {
       this.setState({
         message: [<p>Error</p>,
         ((body.error && body.error.error && body.error.cmd) ? [<code>{body.error.error}</code>,<p>Command:</p>,<code>{body.error.cmd}</code>] : null) 
+        || ((body.error && body.error.code && body.error.cmd) ? [<code>Error Code: {body.error.code}</code>,<p>Command:</p>,<code>{body.error.cmd}</code>] : null) 
         || (body.error ? <code>body.error = {JSON.stringify(body.error, null, 2)}</code> : null)
         || <code>body = {JSON.stringify(body, null, 2)}</code>],
         variant: "danger",
@@ -255,7 +256,7 @@ export class EventComponent extends React.Component {
         if (response.status == 200) {
           response.json().then(json => {
             console.log("JSON:",json)
-            this.props.event.preview = json.preview
+            this.props.event.preview = json
             this.loadPreview()
           })
         } else {

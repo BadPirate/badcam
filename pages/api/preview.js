@@ -25,7 +25,7 @@ export default (req, res) => {
     return pexec(`if [ -f ${previewPath} ]; then exit; fi; \
     ffmpeg -hide_banner -y -i ${rightPath} -i ${frontPath} -i ${leftPath} -nostdin -loglevel panic -filter_complex \
     "[0:v][1:v]hstack[lf];[lf][2:v]hstack[lfr];[lfr]scale=w=600:h=150" \
-     -vframes 1 ${previewTemp} || echo "Unable to generate preview" >&2; exit 1
+     -vframes 1 ${previewTemp} || (echo "Unable to generate preview" >&2; exit 1);
      mv ${previewTemp} ${previewPath}`, "No preview output generated").then(_ => {
        return previewPath
      })

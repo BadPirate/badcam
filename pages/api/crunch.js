@@ -111,7 +111,7 @@ export default (req, res) => {
       info.highlightPath = highlightPath
       return pexec(`if [ ! ${crunchPath} -a ! -f ${highlightPath} ]; then exit; fi; \
         ffmpeg -hide_banner -y -i ${shrunkPaths[0]} -i ${shrunkPaths[1]} -i ${shrunkPaths[2]} -nostdin -filter_complex \
-        "[0:v][1:v]hstack[lf];[lf][2:v]hstack[lfr];[lfr]split[full][f];[f]select=gt(scene\\,0.003),setpts=N/(16*TB)[bh];[bh]scale=w=600:h=150[hslow];[hslow]setpts=0.25*PTS[highlight]" \
+        "[0:v][1:v]hstack[lf];[lf][2:v]hstack[lfr];[lfr]split[full][f];[f]select=gt(scene\\,0.003),setpts=N/(16*TB)[bh];[bh]scale=w=600:h=150[highlight]" \
         -map "[full]" -pix_fmt yuv420p ${crunchTemp} -map "[highlight]" -pix_fmt yuv420p ${highlightTemp} \
         || (echo "Unable to crunch" >&2; exit 1); \
         mv ${crunchTemp} ${crunchPath}; mv ${highlightTemp} ${highlightPath}`, "No crunch output file present").then(_ => {
