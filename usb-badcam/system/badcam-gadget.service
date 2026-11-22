@@ -1,0 +1,15 @@
+[Unit]
+Description=badcam USB mass-storage gadget (binds the drive early)
+DefaultDependencies=no
+After=local-fs.target sys-kernel-config.mount
+Before=basic.target
+ConditionPathExists=/var/lib/badcam/cam.img
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/badcam/gadget.sh up
+ExecStop=/opt/badcam/gadget.sh down
+
+[Install]
+WantedBy=sysinit.target

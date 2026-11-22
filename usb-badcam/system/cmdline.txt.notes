@@ -1,0 +1,8 @@
+/boot/firmware/cmdline.txt is a single line. install.sh makes sure it contains:
+
+  quiet fastboot modules-load=dwc2
+
+and removes any "console=serial0,115200" / "console=ttyAMA0,115200" entry (no serial
+console). Everything else (root=PARTUUID=..., rootfstype, rootwait, cfg80211.ieee80211_regdom=...)
+is left untouched. If the Pi will not boot after a manual edit, put the card in a
+laptop and restore the single-line original.
