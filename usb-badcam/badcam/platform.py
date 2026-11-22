@@ -22,6 +22,9 @@ class Platform(Protocol):
     def unmount(self) -> None: ...
     def is_mounted(self) -> bool: ...
     def fsck(self) -> None: ...
+    def fs_dirty(self) -> bool: ...
+    def fsck_age_days(self) -> float | None: ...
+    def fsck_stamp(self) -> None: ...
     def free_bytes(self) -> int: ...
     def wifi_block(self) -> None: ...
     def wifi_unblock(self) -> None: ...
@@ -125,6 +128,39 @@ class LinuxPlatform:
         finally:
             self._detach()
 
+    # Partition 1 starts at 1 MiB (see install.sh). The dirty flag is in its boot sector.
+    PART_OFFSET = 1024 * 1024
+
+    def fs_dirty(self) -> bool:
+        """True if the filesystem's dirty flag is set (or cannot be read: be safe)."""
+        try:
+            with open(self.cfg.storage.image, "rb") as fh:
+                fh.seek(self.PART_OFFSET)
+                boot = fh.read(512)
+        except OSError:
+            return True
+        if len(boot) < 512:
+            return True
+        if boot[3:11] == b"EXFAT   ":
+            return bool(int.from_bytes(boot[106:108], "little") & 0x0002)  # VolumeDirty
+        return bool(boot[0x41] & 0x01)  # FAT32 "dirty" flag
+
+    def _stamp_path(self) -> str:
+        return os.path.join(os.path.dirname(self.cfg.storage.state_db), "last-fsck")
+
+    def fsck_age_days(self) -> float | None:
+        try:
+            return (time.time() - os.path.getmtime(self._stamp_path())) / 86400
+        except OSError:
+            return None
+
+    def fsck_stamp(self) -> None:
+        try:
+            with open(self._stamp_path(), "w") as fh:
+                fh.write(str(time.time()))
+        except OSError:
+            pass
+
     def free_bytes(self) -> int:
         st = os.statvfs(self.cfg.storage.mount_point)
         return st.f_bavail * st.f_frsize
@@ -179,6 +215,8 @@ class FakePlatform:
         self.poweroffs = 0
         self.wifi_blocked = False
         self.extra_free_bytes: int | None = None
+        self.dirty = False
+        self.fsck_age: float | None = 0.0
 
     def _rec(self, name: str) -> None:
         self.calls.append(name)
@@ -220,6 +258,16 @@ class FakePlatform:
 
     def fsck(self) -> None:
         self._rec("fsck")
+        self.fsck_age = 0.0
+
+    def fs_dirty(self) -> bool:
+        return self.dirty
+
+    def fsck_age_days(self) -> float | None:
+        return self.fsck_age
+
+    def fsck_stamp(self) -> None:
+        self.fsck_age = 0.0
 
     def free_bytes(self) -> int:
         if self.extra_free_bytes is not None:

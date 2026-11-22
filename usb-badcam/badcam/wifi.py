@@ -24,6 +24,7 @@ def render(index: int, net: WifiCfg) -> str:
         "[wifi]",
         "mode=infrastructure",
         f"ssid={net.ssid}",
+        "powersave=2",
         "",
     ]
     if net.psk:

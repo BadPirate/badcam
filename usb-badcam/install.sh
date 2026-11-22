@@ -160,6 +160,11 @@ else
   losetup -d "$loopdev"
 fi
 
+say "Wi-Fi power save off (steadier SSH and uploads)"
+nmcli -t -f NAME,TYPE connection show 2> /dev/null | awk -F: '$2 ~ /wireless/ {print $1}' | while read -r c; do
+  nmcli connection modify "$c" 802-11-wireless.powersave 2 2> /dev/null || true
+done
+
 say "systemd units"
 install -m 0644 "$HERE/system/badcam-gadget.service" /etc/systemd/system/
 install -m 0644 "$HERE/system/badcam.service" /etc/systemd/system/

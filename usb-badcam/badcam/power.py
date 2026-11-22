@@ -1,6 +1,6 @@
 """Power sensing: ADS1015-style I2C reader (UPS) with a USB host-state fallback.
 
-The Pi-UpTime UPS 2.0 exposes a 12-bit ADC at I2C 0x49. Its register map was
+The Pi-UpTime UPS 2.0 exposes a 12-bit ADC at I2C 0x48 (bench-verified; 0x49/0x4b depend on jumpers). Its register map was
 not available when this was written, so the driver is a generic ADS1015
 single-shot reader and the channel numbers and scales are config. Run
 `badcam probe-ups` on the bench to find them (docs/BENCH-TEST.md, B3).
@@ -20,8 +20,8 @@ from .platform import Platform
 I2C_SLAVE = 0x0703
 REG_CONVERSION = 0x00
 REG_CONFIG = 0x01
-PGA_4V096 = 0b001  # +/-4.096 V full scale
-FULL_SCALE_V = 4.096
+PGA_6V144 = 0b000  # +/-6.144 V full scale (the UPS 5 V rails read ~5 V and clip at 4.096)
+FULL_SCALE_V = 6.144
 
 
 class I2CDevice(Protocol):
@@ -46,8 +46,8 @@ class LinuxI2C:
 
 
 def config_word(channel: int) -> int:
-    """Single-shot start, MUX AINx-GND, PGA +/-4.096 V, 1600 SPS, comparator off."""
-    return (1 << 15) | ((0b100 + channel) << 12) | (PGA_4V096 << 9) | (1 << 8) | (0b100 << 5) | 0b11
+    """Single-shot start, MUX AINx-GND, PGA +/-6.144 V, 1600 SPS, comparator off."""
+    return (1 << 15) | ((0b100 + channel) << 12) | (PGA_6V144 << 9) | (1 << 8) | (0b100 << 5) | 0b11
 
 
 def raw_to_volts(raw16: int) -> float:

@@ -35,6 +35,8 @@ class StorageCfg:
     upload_recent: bool = False
     min_free_gb: float = 4
     settle_s: int = 120
+    fsck: str = "auto"  # auto | always | never
+    fsck_every_days: float = 30
     mount_point: str = "/mnt/badcam-cam"
     state_db: str = "/var/lib/badcam/state.db"
 
@@ -53,7 +55,7 @@ class PowerCfg:
 class UpsCfg:
     driver: str = "ads1015"
     bus: int = 1
-    address: int = 0x49
+    address: int = 0x48
     calibrated: bool = False
     vin_channel: int = 0
     vbat_channel: int = 2
@@ -158,6 +160,10 @@ def validate(cfg: Config) -> list[str]:
         p.append("storage.size_gb must be at least 1")
     if st.min_free_gb < 0 or st.min_free_gb >= st.size_gb:
         p.append("storage.min_free_gb must be >= 0 and smaller than size_gb")
+    if st.fsck not in ("auto", "always", "never"):
+        p.append("storage.fsck must be auto, always or never")
+    if st.fsck_every_days < 0:
+        p.append("storage.fsck_every_days must be >= 0")
     if st.settle_s < 0:
         p.append("storage.settle_s must be >= 0")
     pw = cfg.power

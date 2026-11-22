@@ -77,4 +77,5 @@ def test_generated_file_is_valid_keyfile(tmp_path):
     assert cp["connection"]["type"] == "wifi" and cp["connection"]["id"] == "badcam-1"
     assert cp["wifi"]["ssid"] == "HomeNet" and cp["wifi"]["mode"] == "infrastructure"
     assert cp["wifi-security"]["key-mgmt"] == "wpa-psk" and cp["wifi-security"]["psk"] == "secret-home"
+    assert cp["wifi"]["powersave"] == "2"
     assert cp["ipv4"]["method"] == "auto"

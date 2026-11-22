@@ -262,3 +262,58 @@ def test_recent_clips_only_when_enabled(env):
     env.daemon.detached_cycle()
     assert "RecentClips/2026-11-22_10-00-00-front.mp4" in env.mock.index
     assert env.files_left() == []
+
+
+def test_fsck_skipped_when_clean_and_recent(env):
+    env.build(events=1, minutes=1)
+    env.daemon.startup()
+    env.p.dirty, env.p.fsck_age = False, 1.0
+    env.daemon.detached_cycle()
+    assert "fsck" not in env.p.calls  # saves ~6 min per cycle on a Zero W with a 20 GB image
+
+
+def test_fsck_runs_when_dirty_stale_or_forced(env):
+    env.build(events=1, minutes=1)
+    env.daemon.startup()
+    for dirty, age, mode, expect in [
+        (True, 1.0, "auto", True),
+        (False, 31.0, "auto", True),
+        (False, 1.0, "always", True),
+        (True, 99.0, "never", False),
+        (False, None, "auto", False),  # fresh image: stamp, do not check
+    ]:
+        env.p.calls.clear()
+        env.p.dirty, env.p.fsck_age = dirty, age
+        env.cfg.storage.fsck = mode
+        env.daemon.detached_cycle()
+        assert ("fsck" in env.p.calls) is expect, (dirty, age, mode)
+    assert env.p.fsck_age == 0.0
+
+
+def test_fs_dirty_flag_parsing(tmp_path):
+    from badcam.config import Config
+    from badcam.platform import LinuxPlatform
+
+    cfg = Config()
+    cfg.storage.image = str(tmp_path / "img")
+    p = LinuxPlatform(cfg)
+
+    def image(boot: bytes) -> None:
+        (tmp_path / "img").write_bytes(b"\0" * p.PART_OFFSET + boot.ljust(512, b"\0"))
+
+    ex = bytearray(512)
+    ex[3:11] = b"EXFAT   "
+    image(bytes(ex))
+    assert p.fs_dirty() is False
+    ex[106] = 0x02
+    image(bytes(ex))
+    assert p.fs_dirty() is True
+    fat = bytearray(512)
+    fat[3:11] = b"mkfs.fat"
+    image(bytes(fat))
+    assert p.fs_dirty() is False
+    fat[0x41] = 1
+    image(bytes(fat))
+    assert p.fs_dirty() is True
+    (tmp_path / "img").unlink()
+    assert p.fs_dirty() is True  # unreadable: assume dirty

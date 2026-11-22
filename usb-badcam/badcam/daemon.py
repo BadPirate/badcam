@@ -273,6 +273,34 @@ class Daemon:
                     total += f.size
         return total
 
+    def _maybe_fsck(self) -> None:
+        """A full fsck of a 20 GB image takes ~6 min on a Zero W: only when it can matter."""
+        st = self.cfg.storage
+        t0 = self.p.now()
+        if st.fsck == "never":
+            return
+        age = self.p.fsck_age_days()
+        if st.fsck == "always":
+            why = "fsck=always"
+        elif self.p.fs_dirty():
+            why = "dirty flag set"
+        elif age is None:
+            self.p.fsck_stamp()  # fresh image: nothing to check yet, start the clock
+            log.get().info("fsck skipped (clean, first run)")
+            return
+        elif age >= st.fsck_every_days:
+            why = f"last full fsck {age:.0f} days ago"
+        else:
+            log.get().info("fsck skipped (clean, last full check %.1f days ago)", age)
+            return
+        log.get().info("running fsck (%s)", why)
+        try:
+            self.p.fsck()
+            self.p.fsck_stamp()
+        except Exception as exc:
+            log.get().warning("fsck failed (ignored): %s", exc)
+        log.get().info("fsck took %.0fs", self.p.now() - t0)
+
     def _abort(self, exc: CycleAbort) -> None:
         log.get().warning("cycle aborted: %s (back off %ss)", exc.reason, exc.backoff_s)
         self.backoff_until = self.p.now() + exc.backoff_s
@@ -302,10 +330,7 @@ class Daemon:
         self.p.gadget_down()
         try:
             if not brief:
-                try:
-                    self.p.fsck()
-                except Exception as exc:
-                    log.get().warning("fsck failed (ignored): %s", exc)
+                self._maybe_fsck()
             mount = self.p.mount_rw()
             try:
                 events = scan(mount, self.cfg.storage.upload_recent)

@@ -12,7 +12,7 @@ def test_defaults_and_valid():
     assert cfg.storage.size_gb == 40 and cfg.storage.upload_recent is False
     assert cfg.power.on_battery_idle == "standby"
     assert cfg.live.enabled and cfg.live.reclaim_eject and cfg.live.reclaim_gb == 8
-    assert cfg.ups.address == 0x49 and cfg.ups.calibrated is False
+    assert cfg.ups.address == 0x48 and cfg.ups.calibrated is False
 
 
 def test_example_file_is_valid():

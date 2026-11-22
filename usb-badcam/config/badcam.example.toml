@@ -23,6 +23,8 @@ size_gb = 40             # 64 GB high-endurance card recommended
 fs = "exfat"             # exfat | vfat
 upload_recent = false    # RecentClips (rolling hour of driving) are not uploaded
 min_free_gb = 4          # below this, detach and delete oldest SentryClips even if not uploaded
+fsck = "auto"            # auto: full fsck only if the dirty bit is set or fsck_every_days passed; always | never
+fsck_every_days = 30
 settle_s = 120           # live mode: files must be unchanged this long
 
 [power]
@@ -35,7 +37,7 @@ wifi_wait_s = 90
 [ups]
 driver = "ads1015"       # ads1015 | none
 bus = 1
-address = 0x49
+address = 0x48   # Pi-UpTime default jumper seen on the bench; 0x49/0x4b possible
 calibrated = false       # true once the bench probe confirmed channels and scales
 vin_channel = 0
 vbat_channel = 2

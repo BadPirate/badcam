@@ -24,14 +24,14 @@ class FakeAds:
             word = (data[1] << 8) | data[2]
             assert word & 0x8000 and word & 0x0100  # start single shot
             self.mux = ((word >> 12) & 0x7) - 4
-            assert (word >> 9) & 0x7 == 0b001  # +/-4.096 V
+            assert (word >> 9) & 0x7 == 0b000  # +/-6.144 V
 
     def read(self, n):
         if self.fail:
             raise OSError("i2c boom")
         if self.ptr == 0x01:
             return bytes([0x80, 0x00])  # conversion ready
-        raw = round(self.volts[self.mux] / 4.096 * 2048)
+        raw = round(self.volts[self.mux] / 6.144 * 2048)
         raw12 = raw & 0xFFF
         word = (raw12 << 4) & 0xFFFF
         return bytes([word >> 8, word & 0xFF])
@@ -49,10 +49,10 @@ def make(cfg_edit=None, volts=(2.5, 0.0, 1.9, 0.0), fail=False, udc_attached=Tru
 
 
 def test_conversion_maths():
-    assert raw_to_volts(0x7FF0) == pytest.approx(4.096 * 2047 / 2048)
-    assert raw_to_volts(0x4000) == pytest.approx(2.048)
+    assert raw_to_volts(0x7FF0) == pytest.approx(6.144 * 2047 / 2048)
+    assert raw_to_volts(0x4000) == pytest.approx(3.072)
     assert raw_to_volts(0x0000) == 0
-    assert raw_to_volts(0xFFF0) == pytest.approx(-4.096 / 2048)  # -1 LSB
+    assert raw_to_volts(0xFFF0) == pytest.approx(-6.144 / 2048)  # -1 LSB
     assert config_word(0) >> 12 == 0b1100
     assert config_word(2) >> 12 == 0b1110
 
