@@ -10,7 +10,7 @@ for arg in "$@"; do
     --force) FORCE=1 ;;
     -h | --help)
       echo "usage: sudo ./install.sh [--force]"
-      echo "env: BADCAM_MASK_AVAHI=1 also disables avahi-daemon (saves boot time, loses usb-badcam.local)"
+      echo "env: BADCAM_MASK_AVAHI=1 also disables avahi-daemon (saves boot time, loses <hostname>.local)"
       exit 0
       ;;
     *)

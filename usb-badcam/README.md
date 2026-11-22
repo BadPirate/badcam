@@ -20,7 +20,7 @@ setup is adapted from teslausb (MIT, see `NOTICE`).
 
 ## Flashing and install
 
-1. Flash **Raspberry Pi OS Lite 32-bit** (Bookworm or newer) with Raspberry Pi Imager. In the Imager settings set: hostname `usb-badcam`, your SSH public key, and your home Wi-Fi.
+1. Flash **Raspberry Pi OS Lite 32-bit** (Bookworm or newer) with Raspberry Pi Imager. In the Imager settings set a hostname of your choice (for example `<hostname>`), your SSH public key, and your home Wi-Fi. The installer never changes the hostname, so an existing Pi keeps its name and `<hostname>.local` keeps working.
 2. Boot, SSH in, get this folder onto the Pi (`git clone` the repo, or `scp -r usb-badcam`).
 3. `cd usb-badcam && sudo ./install.sh`. It installs packages, turns on I2C and the USB gadget overlay, trims boot, creates the cam image, installs the units, and copies `config/badcam.example.toml` to `/boot/firmware/badcam.toml` if absent.
 4. Edit `/boot/firmware/badcam.toml`: `server.url`, `server.token` (from the web app: Settings -> Add device) and any extra `[[wifi]]` networks. `badcam check-config` validates it.
@@ -28,7 +28,7 @@ setup is adapted from teslausb (MIT, see `NOTICE`).
 
 The Wi-Fi you set in the Imager stays (it is a separate NetworkManager connection). Entries in `badcam.toml` are added on top at every boot as `badcam-<n>.nmconnection` files; removing an entry removes its file at the next boot (or run `sudo badcam wifi-apply` and `sudo nmcli connection reload`).
 
-The install keeps `avahi-daemon` on so `usb-badcam.local` works; run `BADCAM_MASK_AVAHI=1 sudo ./install.sh` to disable it for a slightly faster boot.
+The install keeps `avahi-daemon` on so `<hostname>.local` works; run `BADCAM_MASK_AVAHI=1 sudo ./install.sh` to disable it for a slightly faster boot.
 
 ## How it works
 

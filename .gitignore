@@ -8,3 +8,5 @@ __pycache__
 *.img
 .DS_Store
 *.tsbuildinfo
+web/AGENTS.md
+web/data
