@@ -21,6 +21,7 @@ DETACHED_WORK = "DETACHED_WORK"
 ON_BATTERY_IDLE = "ON_BATTERY_IDLE"
 POLL_S = 5
 WIFI_POLL_S = 10
+IDLE_POLL_S = 2  # standby: notice the host coming back within seconds
 BRIEF_MAX_S = 300
 
 ClientFactory = Callable[[Config], ApiClient]
@@ -520,7 +521,7 @@ class Daemon:
             self.p.wifi_unblock()
             self._detached_and_next()
             return
-        self.p.sleep(POLL_S)
+        self.p.sleep(IDLE_POLL_S)
 
     # -- one-shot (CLI) --------------------------------------------------------------
     def once(self, mode: str) -> str:

@@ -425,3 +425,20 @@ def test_eject_runs_fsck_only_if_dirty_and_logs_absence(env):
     env.daemon.last_live = env.p.t
     env.daemon.step()
     assert "fsck" in env.p.calls
+
+
+def test_standby_keeps_gadget_bound_and_resumes_within_seconds(env):
+    env.cfg.power.standby_wifi = "off"
+    env.build(events=1, minutes=1)
+    env.daemon.startup()
+    env.power.car = False
+    env.daemon.set_state(DETACHED_WORK)
+    env.daemon.step()
+    assert env.daemon.state == ON_BATTERY_IDLE and env.p.wifi_blocked
+    assert env.p.gadget  # the drive stays visible while idle
+    t0 = env.p.t
+    env.daemon.step()
+    assert env.p.t - t0 <= 2  # idle polls the USB link every 2 s
+    env.power.car = True  # host returns
+    env.daemon.step()
+    assert env.daemon.state == RECORDING and not env.p.wifi_blocked and env.p.gadget
