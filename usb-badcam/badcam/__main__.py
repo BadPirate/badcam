@@ -40,7 +40,7 @@ def cmd_check_config(args: argparse.Namespace) -> int:
     if problems:
         return 1
     print(f"config OK: {len(cfg.wifi)} wifi network(s), server {cfg.server.url}, "
-          f"idle mode {cfg.power.on_battery_idle}, ups calibrated={cfg.ups.calibrated}")
+          f"idle mode {cfg.power.on_battery_idle}, standby wifi {cfg.power.standby_wifi}")
     return 0
 
 
@@ -84,11 +84,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     out["car_power"] = power.car_power()
     out["udc_state"] = platform.udc_state()
     out["ssid"] = platform.current_ssid()
-    vin = getattr(power, "vin_v", lambda: None)()
-    out["vin_v"] = None if vin is None else round(vin, 3)
-    vbat = power.battery_v()
-    out["battery_v"] = None if vbat is None else round(vbat, 3)
-    out["ups_calibrated"] = cfg.ups.calibrated
+    out.update(getattr(power, "telemetry", dict)())
     print(json.dumps(out, indent=2))
     return 0
 
@@ -97,7 +93,7 @@ def cmd_probe(args: argparse.Namespace) -> int:
     cfg, _ = load(args.config)
     mon = PowerMonitor(cfg, LinuxPlatform(cfg))
     print(f"Probing I2C bus {cfg.ups.bus} address {cfg.ups.address:#04x}; Ctrl-C to stop.")
-    print("Raw ADC volts per channel (scales not applied). Unplug/plug the UPS input and watch.")
+    print("Raw ADC volts per channel (AIN0 Vin, AIN1 battery-0.2 V, AIN2 Vout, AIN3 NTC; scales not applied).")
     n = 0
     try:
         while args.count == 0 or n < args.count:

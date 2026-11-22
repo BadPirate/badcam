@@ -124,13 +124,14 @@ def test_low_battery_aborts_and_poweroff(env):
 
 def test_critical_battery_in_any_state_unmounts_and_powers_off(env):
     env.daemon.startup()
-    env.power.vbat = 3.1
+    env.power.vbat = 3.0
     env.p.mounted = "ro"
     env.daemon.step()
     assert env.p.poweroffs == 1 and env.p.mounted is None
 
 
 def test_standby_vs_poweroff(env):
+    env.cfg.power.standby_wifi = "off"
     env.build(events=1, minutes=1)
     env.daemon.startup()
     # standby (default): Wi-Fi off, no poweroff, stays up
@@ -228,6 +229,7 @@ def test_brief_eject_reclaims_uploaded_files(env):
     env.daemon.live_cycle()  # uploads, records, keeps files
     assert len(env.files_left()) == 6 and env.daemon.undeleted_bytes > 0
     env.daemon.last_live = env.p.t
+    env.daemon.wifi_was_up = True
     env.daemon.step()  # sees reclaim condition and does a brief detached cycle
     assert env.files_left() == []
     assert env.daemon.state == RECORDING and env.p.gadget
@@ -317,3 +319,109 @@ def test_fs_dirty_flag_parsing(tmp_path):
     assert p.fs_dirty() is True
     (tmp_path / "img").unlink()
     assert p.fs_dirty() is True  # unreadable: assume dirty
+
+
+def test_standby_wifi_defaults_to_on(env):
+    env.build(events=1, minutes=1)
+    env.daemon.startup()
+    env.daemon.set_state(DETACHED_WORK)
+    env.daemon.step()
+    assert env.daemon.state == ON_BATTERY_IDLE and not env.p.wifi_blocked
+
+
+def test_critical_battery_ignored_on_external_power(env):
+    env.power.car = False
+    env.power.vbat = 3.0
+    env.power.vin_v = lambda: 5.0
+    assert env.daemon.battery_critical() is False
+    env.power.vin_v = lambda: 0.0
+    assert env.daemon.battery_critical() is True
+
+
+def test_upload_triggers_promptly_on_wifi_arrival_car_attached(env):
+    env.build(events=1, minutes=1)
+    env.power.car = True
+    env.p.ssid = None  # no Wi-Fi yet
+    env.daemon.startup()
+    env.daemon.last_live = env.p.t  # periodic live cycle is not due
+    env.daemon.step()
+    assert env.mock.index == {}
+    env.p.ssid = "HomeNet"
+    env.p.t += 11  # next Wi-Fi poll
+    env.daemon.step()
+    assert len(env.mock.index) == 6 and len(env.files_left()) == 6  # uploaded read-only, nothing deleted
+
+
+def test_upload_and_delete_on_wifi_arrival_car_absent(env):
+    env.build(events=1, minutes=1)
+    env.cfg.power.standby_wifi = "on"
+    env.power.car = False
+    env.p.ssid = None
+    env.daemon.startup()
+    env.daemon.state = ON_BATTERY_IDLE
+    env.daemon.step()
+    assert env.mock.index == {}
+    env.p.ssid = "HomeNet"
+    env.p.t += 11
+    env.daemon.step()
+    assert len(env.mock.index) == 6 and env.files_left() == []
+
+
+def _after_live_upload(env):
+    env.build(events=1, minutes=1)
+    env.power.car = True
+    env.daemon.startup()
+    env.daemon.live_cycle()
+    assert len(env.files_left()) == 6 and env.daemon.undeleted_bytes > 0
+    env.daemon.last_live = env.p.t
+    env.daemon.wifi_was_up = True  # Wi-Fi already connected: no "arrival" trigger
+
+
+def test_eject_any_verified_file_once_host_is_quiet(env):
+    _after_live_upload(env)  # far below reclaim_gb
+    env.p.idle_s = 5.0  # the host wrote 5 s ago: not quiet
+    env.daemon.step()
+    assert len(env.files_left()) == 6
+    env.p.idle_s = 61.0
+    env.daemon.step()
+    assert env.files_left() == [] and env.p.gadget and env.daemon.state == RECORDING
+
+
+def test_eject_min_interval(env):
+    _after_live_upload(env)
+    env.daemon.last_eject = env.p.t - 60  # ejected a minute ago
+    env.daemon.step()
+    assert len(env.files_left()) == 6
+    env.p.t += 15 * 60
+    env.daemon.last_live = env.p.t
+    env.daemon.step()
+    assert env.files_left() == []
+
+
+def test_force_trigger_waits_for_quiet_until_max_wait(env):
+    env.cfg.live.reclaim_gb = 0.000001
+    _after_live_upload(env)
+    env.p.idle_s = 1.0  # host keeps writing
+    env.daemon.step()
+    assert len(env.files_left()) == 6
+    env.p.t += env.cfg.delete.max_wait_min * 60 + 1
+    env.daemon.last_live = env.p.t
+    env.daemon.step()
+    assert env.files_left() == []  # max-wait override
+
+
+def test_eject_runs_fsck_only_if_dirty_and_logs_absence(env):
+    from badcam import log
+
+    _after_live_upload(env)
+    env.p.dirty = False
+    env.daemon.step()
+    assert "fsck" not in env.p.calls
+    assert any("drive absent for" in line for line in log.RING.lines)
+    env.build(events=1, minutes=1)
+    env.daemon.live_cycle()
+    env.p.dirty = True
+    env.daemon.last_eject = -1e12
+    env.daemon.last_live = env.p.t
+    env.daemon.step()
+    assert "fsck" in env.p.calls

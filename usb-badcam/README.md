@@ -13,9 +13,9 @@ setup is adapted from teslausb (MIT, see `NOTICE`).
 - Raspberry Pi Zero W (v1 is fine), 64 GB high-endurance microSD card (40 GB goes to the cam image, configurable).
 - A UPS board with a Li-ion battery. Planned: Alchemy Power Pi-UpTime UPS 2.0 (exact model and battery still to be confirmed, see the bench checklist).
 - Wiring:
-  1. Car USB port -> UPS power input (so the UPS sees the car's power come and go).
-  2. UPS output -> Pi power (header pins or the Pi's "PWR" micro-USB port).
-  3. A **separate data cable** from the car to the Pi's "USB" (OTG) micro-USB port, with the **5 V (VBUS) line cut** or a data-only adapter. Otherwise the car's 5 V back-feeds the Pi and hides power loss from the UPS.
+  1. Power into the shield's own USB-C input (a charger or the car, ~5 V). The Pi's "PWR" micro-USB port stays empty.
+  2. Shield output -> Pi power (header pins). The Pi sees the battery through the shield.
+  3. A **power-blocking data cable** (VBUS cut, or a data-only adapter) from the car to the Pi's "USB" (OTG) micro-USB port. On the Pi Zero that port's VBUS is tied to the 5 V rail, so a plain cable would back-feed the Pi. The "car is present" signal is this USB link, not the shield input.
 - **Power-blocking data cable:** on the Pi Zero the "USB" (data) port's VBUS is wired to the same 5 V rail as "PWR". When the UPS powers the Pi, use a data cable with VBUS cut (or a data-only adapter), otherwise the car's 5 V back-feeds the Pi and the UPS never sees power loss. Powering the Pi through the data port alone (no UPS) works on a bench but then the Pi sees a host and cannot tell car-off from unplugged.
 - Caveat: some Tesla firmware (2024.32 and later) cuts USB power while Sentry mode is active. No software can make the car write clips when its port is dead; test on your car (bench checklist B7).
 
@@ -36,11 +36,11 @@ The install keeps `avahi-daemon` on so `<hostname>.local` works; run `BADCAM_MAS
 States: `RECORDING` (car attached, drive visible), `LIVE_UPLOAD`, `DETACHED_WORK`, `ON_BATTERY_IDLE`.
 
 - **Recording.** The gadget is bound very early at boot (before Wi-Fi, fsck or mounts); the aim is a drive visible to the car within 20 s of power. The daemon only watches power and the clock.
-- **Live upload (car attached, e.g. awake at home).** Every `live.interval_s` on a known network the daemon mounts the image **read-only**, uploads events that are complete (`event.json` present, nothing changed for `storage.settle_s`), unmounts, and deletes nothing. Files the server reports as `valid: false` are not recorded (they may have been read mid-write) and are retried later.
+- **Upload whenever there is Wi-Fi (car attached or not).** When a known upload network comes up (polled every 10 s) and also every `live.interval_s`, complete events are uploaded: with the car attached via a **read-only** mount (nothing deleted); without the car, in a detached cycle that deletes each file after the server confirms it. Complete = `event.json` present and nothing changed for `storage.settle_s`. Files the server reports as `valid: false` are not recorded (they may have been read mid-write) and are retried later.
 - **Detached work (car power lost for `power.debounce_s`).** The gadget is unbound, the image is checked (`fsck`, 120 s cap, failures ignored; skipped unless the filesystem's dirty flag is set or `storage.fsck_every_days` have passed, because a full check of a 20 GB image takes about 6 minutes on a Zero W; `storage.fsck = "always"|"never"` overrides), mounted read-write, files already uploaded and junk (clips under 100,000 bytes) are deleted, then everything left is uploaded (SavedClips first, then SentryClips, newest first) and each file is deleted after the server confirms it. Empty event folders are removed. If free space is below `storage.min_free_gb` the oldest SentryClips are deleted even if not uploaded (logged as data loss). Then the gadget is bound again. If car power returns mid-cycle the current chunk finishes, the image is unmounted and the gadget rebound; if the battery is low or `power.max_battery_min` is reached the cycle stops.
-- **Brief eject.** While the car is attached and awake, once `live.reclaim_gb` (8 GB) of clips are uploaded but not yet deleted, or free space drops below the floor, the daemon briefly unbinds the drive to delete them without uploading. **Side effect: the car sees the drive missing for some seconds** (and may show a USB/dashcam warning). Turn it off with `live.reclaim_eject = false`.
+- **Brief eject (deleting while the car is attached).** Two writers on one FAT disk are unsafe, so deleting uploaded-and-verified files needs the drive unbound for a moment. It happens as soon as there are such files, **if** the host has written nothing to the image for `delete.quiet_s` (60 s, measured from the image file's modification time) and at most once per `delete.min_interval_min` (15). The sequence is eject, fsck only if the dirty flag is set, delete, re-attach; the log says "drive absent for N s". `live.reclaim_gb` (8 GB) of undeleted data, or free space below the floor, is a force trigger that still waits for write-quiet, but after `delete.max_wait_min` (120) it ejects anyway. **Trade-off: the car sees the drive missing for a few seconds** (and may show a USB/dashcam warning); gating on write-quiet keeps that away from active recording. Turn it off with `live.reclaim_eject = false`.
 - **After work on battery (`power.on_battery_idle`).**
-  - `"standby"` (default): Wi-Fi is switched off (only once the UPS is calibrated; until then Wi-Fi stays on, because without a USB host on a bench "car power lost" is indistinguishable from a real loss and the Pi would lock you out of SSH) and the Pi stays up, so the drive is available instantly when the car wakes. Every 30 min it switches Wi-Fi on for one attempt if files are pending. Battery below `ups.vbat_low_v` -> clean `poweroff`.
+  - `"standby"` (default): the Pi stays up so the drive is available instantly when the car wakes. `power.standby_wifi` decides whether Wi-Fi stays on (`"on"`, default until you have done a full car test, so SSH keeps working) or is switched off to save power (`"off"`; then every 30 min it switches Wi-Fi on for one attempt if files are pending). Battery below `ups.vbat_low_v` -> clean `poweroff`.
   - `"poweroff"`: `systemctl poweroff` straight after the work is done. Only switch to this after bench test B4 proves your UPS cuts power after a halt **and** boots the Pi again when car power returns; otherwise the Pi stays off and the car finds no drive.
 - The image is never mounted read-write while the gadget is bound (asserted in the tests).
 
@@ -50,9 +50,9 @@ RecentClips (the rolling hour of driving) are not uploaded unless `storage.uploa
 
 ## Power sensing
 
-The UPS has no GPIO signal. `badcam/power.py` reads an ADS1015-style 12-bit ADC over I2C (default bus 1, address 0x48). The register map and channel assignment of the Pi-UpTime are not confirmed, so channels, scales and thresholds are config (`[ups]`). Until `ups.calibrated = true`, "car power present" falls back to the USB host state (`/sys/class/udc/*/state == configured`). I2C errors also fall back to it. Battery voltage is `None` when unknown and the low-battery rules are then skipped. Limitation of the fallback: while the gadget is unbound (detached work) the host state cannot show that the car is back, so calibrate the UPS reading (bench test B3) for the best behaviour. The critical-battery shutdown (`ups.vbat_critical_v`) only applies while car power is absent, so a depleted battery that is charging in the car does not power the Pi off.
+"Car present" is the **USB link**: `/sys/class/udc/*/state` is `configured` (or `suspended`, since hosts suspend idle devices). `not attached`, `default`, `powered` and `addressed` count as absent, and only after `power.debounce_s` (20 s). While the gadget is unbound (detached work) the link cannot show the car; after re-binding the daemon waits up to 10 s for the host to enumerate again.
 
-Calibrate: `sudo badcam probe-ups`, unplug and plug the UPS input and see which channel follows; then set `vin_channel`, `vbat_channel`, scales and `calibrated = true`.
+The UPS shield is used for battery and Vin telemetry only. `badcam/power.py` reads its ADC (TLA2024, ADS1015 compatible, I2C bus 1, address 0x48 by jumper, single-shot, +/-6.144 V). Bench-confirmed map: AIN0 = Vin (0 V unpowered, about 5 V powered), AIN1 = battery (the vendor adds 0.2 V: Vbatt = AIN1 + 0.2), AIN2 = Vout (about 5 V), AIN3 = NTC (TempC = (4.236 - V) / 0.0408). All of it is configurable in `[ups]`. `badcam status` and the ping show `vin_v`, `battery_v`, `vout_v`, `temp_c`. Defaults: low battery 3.4 V (stop work, clean shutdown), critical 3.1 V; the critical shutdown is skipped while Vin is above `ups.vin_present_v` (external power). The hardware cuts power below 2.6 V and charges only between 0 and 50 C. The cells are unprotected 18650s (Li-ion default; jumper J4 selects LiFePO4). `power.source = "ups"` (car present by Vin) remains as an option. `ups.calibrated` is ignored. `sudo badcam probe-ups` prints the four raw channels.
 
 ## Config reference (`/boot/firmware/badcam.toml`)
 
@@ -65,11 +65,13 @@ See `config/badcam.example.toml` for every key with its default. Highlights:
 | `storage.upload_recent` | false | Upload RecentClips |
 | `storage.min_free_gb` | 4 | Free-space floor |
 | `storage.settle_s` | 120 | Live mode: files unchanged this long |
-| `power.source` | `auto` | `auto` (UPS once calibrated, else USB state), `ups`, `udc` |
+| `power.source` | `auto` | `auto`/`udc` (USB link), `ups` (by Vin) |
 | `power.on_battery_idle` | `standby` | `standby` or `poweroff` |
 | `power.max_battery_min` | 45 | Cap on battery work per power loss |
 | `live.enabled` | true | Upload while the car is attached |
-| `live.reclaim_eject`, `live.reclaim_gb` | true, 8 | Brief eject to free uploaded clips |
+| `live.reclaim_eject`, `live.reclaim_gb` | true, 8 | Allow the brief eject; GB of undeleted data that force it |
+| `delete.quiet_s`, `delete.min_interval_min`, `delete.max_wait_min` | 60, 15, 120 | Eject gate: host write-quiet time, minimum gap, forced-reclaim max wait |
+| `power.standby_wifi` | `on` | Wi-Fi in standby on battery (`off` saves power; test in the car first) |
 
 ## CLI
 
@@ -100,7 +102,7 @@ Put the SD card in a laptop and edit `cmdline.txt` on the boot partition: append
 
 - `badcam-gadget.service`: binds the USB drive very early (configfs). No network.
 - `badcam-wifi.service`: before NetworkManager, writes `badcam-<n>.nmconnection` files from `badcam.toml`. It is ordering only and always exits 0, so it cannot stop NetworkManager. SSIDs that already have a saved connection are skipped.
-- `badcam.service`: the daemon (power, upload, delete). In standby it switches Wi-Fi off only once the UPS is calibrated.
+- `badcam.service`: the daemon (power, upload, delete). In standby it switches Wi-Fi off only if `power.standby_wifi = "off"`.
 
 The journal is persistent (`SystemMaxUse=32M`) so `journalctl -b -1` shows why a boot failed. Trade-off: slightly more SD-card writes than a volatile journal; the cap keeps it small. Set `Storage=volatile` in `/etc/systemd/journald.conf.d/badcam.conf` to go back.
 

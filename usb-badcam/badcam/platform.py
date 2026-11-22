@@ -25,6 +25,7 @@ class Platform(Protocol):
     def fs_dirty(self) -> bool: ...
     def fsck_age_days(self) -> float | None: ...
     def fsck_stamp(self) -> None: ...
+    def image_idle_s(self) -> float | None: ...
     def free_bytes(self) -> int: ...
     def wifi_block(self) -> None: ...
     def wifi_unblock(self) -> None: ...
@@ -154,6 +155,13 @@ class LinuxPlatform:
         except OSError:
             return None
 
+    def image_idle_s(self) -> float | None:
+        """Seconds since the host last wrote to the image (the gadget writes through the file, so mtime moves)."""
+        try:
+            return max(0.0, time.time() - os.stat(self.cfg.storage.image).st_mtime)
+        except OSError:
+            return None
+
     def fsck_stamp(self) -> None:
         try:
             with open(self._stamp_path(), "w") as fh:
@@ -216,6 +224,7 @@ class FakePlatform:
         self.wifi_blocked = False
         self.extra_free_bytes: int | None = None
         self.dirty = False
+        self.idle_s: float | None = 3600.0
         self.fsck_age: float | None = 0.0
 
     def _rec(self, name: str) -> None:
@@ -262,6 +271,9 @@ class FakePlatform:
 
     def fs_dirty(self) -> bool:
         return self.dirty
+
+    def image_idle_s(self) -> float | None:
+        return self.idle_s
 
     def fsck_age_days(self) -> float | None:
         return self.fsck_age

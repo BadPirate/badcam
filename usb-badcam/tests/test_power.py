@@ -37,7 +37,7 @@ class FakeAds:
         return bytes([word >> 8, word & 0xFF])
 
 
-def make(cfg_edit=None, volts=(2.5, 0.0, 1.9, 0.0), fail=False, udc_attached=True):
+def make(cfg_edit=None, volts=(5.0, 3.6, 5.0, 2.6), fail=False, udc_attached=True):
     cfg = Config()
     if cfg_edit:
         cfg_edit(cfg)
@@ -64,39 +64,52 @@ def test_driver_reads_each_channel():
     assert got == pytest.approx([1.0, 2.0, 3.0, 0.5], abs=0.003)
 
 
-def test_ups_mode_applies_scales_and_thresholds():
-    def edit(c):
-        c.ups.calibrated = True
-        c.ups.vin_scale = 2.0
-        c.ups.vbat_scale = 2.0
-    mon, plat, _ = make(edit, volts=(2.5, 0, 1.9, 0))
-    assert mon.vin_v() == pytest.approx(5.0, abs=0.01)
-    assert mon.battery_v() == pytest.approx(3.8, abs=0.01)
+def test_vendor_channel_map_and_scales():
+    # AIN0 Vin, AIN1 battery (+0.2 V), AIN2 Vout, AIN3 NTC
+    mon, plat, _ = make(volts=(5.0, 3.65, 5.05, 2.6))
+    t = mon.telemetry()
+    assert t["vin_v"] == pytest.approx(5.0, abs=0.01)
+    assert t["battery_v"] == pytest.approx(3.85, abs=0.01)
+    assert t["vout_v"] == pytest.approx(5.05, abs=0.01)
+    assert t["temp_c"] == pytest.approx((4.236 - 2.6) / 0.0408, abs=0.2)
+
+
+@pytest.mark.parametrize(
+    "state,present",
+    [("configured", True), ("suspended", True), ("unknown", True),
+     ("not attached", False), ("default", False), ("powered", False), ("addressed", False)],
+)
+def test_car_present_follows_usb_link_states(state, present):
+    mon, plat, _ = make(volts=(0.0, 3.0, 0.0, 0.0))  # Vin 0 V must not matter
+    plat.udc_state = lambda: state
+    assert mon.car_power() is present
+
+
+def test_real_sysfs_udc_state(tmp_path, monkeypatch):
+    from badcam.config import Config
+    from badcam.platform import LinuxPlatform
+    import badcam.platform as pm
+
+    d = tmp_path / "udc" / "20980000.usb"
+    d.mkdir(parents=True)
+    (d / "state").write_text("suspended\n")
+    real_path = pm.Path
+    monkeypatch.setattr(pm, "Path", lambda x: real_path(str(x).replace("/sys/class/udc", str(tmp_path / "udc"))))
+    assert LinuxPlatform(Config()).udc_state() == "suspended"
+    (d / "state").write_text("configured\n")
+    assert LinuxPlatform(Config()).udc_state() == "configured"
+
+
+def test_source_ups_uses_vin():
+    mon, plat, _ = make(lambda c: setattr(c.power, "source", "ups"), volts=(0.0, 3.0, 0.0, 0.0))
+    assert mon.car_power() is False  # Vin 0 V, even though the USB link says configured
+    mon2, _, _ = make(lambda c: setattr(c.power, "source", "ups"), volts=(5.0, 3.0, 0.0, 0.0), udc_attached=False)
+    assert mon2.car_power() is True
+
+
+def test_i2c_errors_do_not_affect_car_signal_and_battery_is_none():
+    mon, plat, _ = make(fail=True, udc_attached=True)
     assert mon.car_power() is True
-    mon2, _, _ = make(edit, volts=(0.1, 0, 1.9, 0), udc_attached=True)
-    assert mon2.car_power() is False  # Vin low wins over a "configured" UDC
-
-
-def test_udc_fallback_when_not_calibrated():
-    mon, plat, _ = make(volts=(0.0, 0, 1.9, 0), udc_attached=True)  # calibrated = false
-    assert mon.car_power() is True  # UDC says configured; the ADC is ignored for car power
-    plat.car_attached = False
-    assert mon.car_power() is False
-    # battery voltage is still available for the low-battery rules
-    assert mon.battery_v() == pytest.approx(3.8, abs=0.01)
-
-
-def test_source_udc_never_touches_i2c():
-    mon, plat, dev = make(lambda c: setattr(c.power, "source", "udc"))
-    mon.car_power()
-    assert dev.writes == []
-
-
-def test_i2c_errors_fall_back_and_battery_is_none():
-    def edit(c):
-        c.ups.calibrated = True
-    mon, plat, _ = make(edit, fail=True, udc_attached=True)
-    assert mon.car_power() is True  # fell back to UDC
     assert mon.battery_v() is None  # unknown: low-battery rules are skipped
     plat.car_attached = False
     assert mon.car_power() is False

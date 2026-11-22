@@ -49,6 +49,7 @@ class PowerCfg:
     max_battery_min: int = 45
     wifi_wait_s: int = 90
     idle_retry_min: int = 30
+    standby_wifi: str = "on"  # on | off: Wi-Fi in standby on battery (off saves power; test in the car first)
 
 
 @dataclass
@@ -56,14 +57,18 @@ class UpsCfg:
     driver: str = "ads1015"
     bus: int = 1
     address: int = 0x48
-    calibrated: bool = False
-    vin_channel: int = 0
-    vbat_channel: int = 2
-    vin_scale: float = 2.0
-    vbat_scale: float = 2.0
-    vin_present_v: float = 4.5
+    calibrated: bool = False  # deprecated, ignored (kept so old config files still load)
+    vin_channel: int = 0  # shield input (AIN0)
+    vbat_channel: int = 1  # battery (AIN1); the vendor adds vbat_offset_v
+    vout_channel: int = 2  # shield output (AIN2)
+    temp_channel: int = 3  # NTC (AIN3)
+    vin_scale: float = 1.0
+    vbat_scale: float = 1.0
+    vout_scale: float = 1.0
+    vbat_offset_v: float = 0.2
+    vin_present_v: float = 4.5  # Vin above this = external power (no critical shutdown)
     vbat_low_v: float = 3.4
-    vbat_critical_v: float = 3.2
+    vbat_critical_v: float = 3.1
 
 
 @dataclass
@@ -75,6 +80,13 @@ class LiveCfg:
 
 
 @dataclass
+class DeleteCfg:
+    quiet_s: int = 60  # host must not have written to the image for this long before an eject
+    min_interval_min: int = 15  # at most one eject per this many minutes
+    max_wait_min: int = 120  # forced reclaim (>= live.reclaim_gb or low space) ignores the quiet gate after this
+
+
+@dataclass
 class Config:
     server: ServerCfg = field(default_factory=ServerCfg)
     wifi: list[WifiCfg] = field(default_factory=list)
@@ -82,6 +94,7 @@ class Config:
     power: PowerCfg = field(default_factory=PowerCfg)
     ups: UpsCfg = field(default_factory=UpsCfg)
     live: LiveCfg = field(default_factory=LiveCfg)
+    delete: DeleteCfg = field(default_factory=DeleteCfg)
 
     def upload_ssids(self) -> set[str]:
         return {w.ssid for w in self.wifi if w.upload}
@@ -111,14 +124,14 @@ def _fill(cls: type, data: dict[str, Any], section: str, problems: list[str]) ->
 def parse(data: dict[str, Any]) -> tuple[Config, list[str]]:
     problems: list[str] = []
     cfg = Config()
-    for name in ("server", "storage", "power", "ups", "live"):
+    for name in ("server", "storage", "power", "ups", "live", "delete"):
         section = data.get(name, {})
         if not isinstance(section, dict):
             problems.append(f"[{name}] must be a table")
             continue
         setattr(cfg, name, _fill(type(getattr(cfg, name)), section, name, problems))
     for key in data:
-        if key not in ("server", "wifi", "storage", "power", "ups", "live"):
+        if key not in ("server", "wifi", "storage", "power", "ups", "live", "delete"):
             problems.append(f"unknown section '{key}'")
     wifi = data.get("wifi", [])
     if not isinstance(wifi, list):
@@ -178,15 +191,20 @@ def validate(cfg: Config) -> list[str]:
         p.append("ups.driver must be ads1015 or none")
     if not 0 <= u.address <= 0x7F:
         p.append("ups.address must be a 7-bit I2C address")
-    for name in ("vin_channel", "vbat_channel"):
+    for name in ("vin_channel", "vbat_channel", "vout_channel", "temp_channel"):
         if not 0 <= getattr(u, name) <= 3:
             p.append(f"ups.{name} must be 0-3")
     if u.vbat_critical_v >= u.vbat_low_v:
         p.append("ups.vbat_critical_v must be lower than ups.vbat_low_v")
-    if u.vin_scale <= 0 or u.vbat_scale <= 0:
+    if u.vin_scale <= 0 or u.vbat_scale <= 0 or u.vout_scale <= 0:
         p.append("ups scales must be positive")
+    if pw.standby_wifi not in ("on", "off"):
+        p.append("power.standby_wifi must be on or off")
     if pw.source == "ups" and u.driver == "none":
         p.append("power.source = ups needs ups.driver = ads1015")
+    dl = cfg.delete
+    if dl.quiet_s < 0 or dl.min_interval_min < 0 or dl.max_wait_min < 0:
+        p.append("delete.* values must be >= 0")
     lv = cfg.live
     if lv.interval_s < 10:
         p.append("live.interval_s must be at least 10")

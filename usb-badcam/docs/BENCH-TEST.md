@@ -1,5 +1,7 @@
 # Bench test (Pi + UPS, before it goes in the car)
 
+**Confirmed on the bench (2026-11-22):** ADC at 0x48; AIN0 = Vin, AIN1 = battery (+0.2 V), AIN2 = Vout, AIN3 = NTC (TempC = (4.236 - V) / 0.0408), +/-6.144 V range. "Car present" is the USB link (`configured`/`suspended`), not Vin. Wiring: power into the shield's own USB-C, Pi "PWR" port empty, power-blocking data cable from the car to the Pi "USB" port. B1 and B3 below are therefore already done; B2 should follow this wiring.
+
 Run these in order on a desk with a laptop as the USB host. Commands run on the Pi unless stated. Tick each one; note results at the bottom, they decide config values.
 
 - [ ] **B1 Identify the hardware.** Which UPS board (full-size Pi-UpTime UPS 2.0 or Pi-Zero-UpTime 2.0), which battery (type, capacity, protected or not), which I2C address jumpers.

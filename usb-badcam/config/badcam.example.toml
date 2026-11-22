@@ -28,27 +28,36 @@ fsck_every_days = 30
 settle_s = 120           # live mode: files must be unchanged this long
 
 [power]
-source = "auto"             # auto | ups | udc
+source = "auto"             # auto = car present when the USB link is up (configured/suspended); ups = by Vin
 debounce_s = 20             # car power must be gone this long before detaching
 on_battery_idle = "standby" # standby | poweroff  (after work is done on battery)
 max_battery_min = 45        # cap on battery-powered work per power loss
 wifi_wait_s = 90
+standby_wifi = "on"         # on | off: Wi-Fi during standby on battery. "off" saves power; keep "on" until a full car test
 
 [ups]
 driver = "ads1015"       # ads1015 | none
 bus = 1
 address = 0x48   # Pi-UpTime default jumper seen on the bench; 0x49/0x4b possible
-calibrated = false       # true once the bench probe confirmed channels and scales
-vin_channel = 0
-vbat_channel = 2
-vin_scale = 2.0          # volts = raw_volts * scale; confirm on the bench
-vbat_scale = 2.0
-vin_present_v = 4.5
+vin_channel = 0          # AIN0: shield input (0 V unpowered, ~5 V powered)
+vbat_channel = 1         # AIN1: battery; Vbatt = AIN1 * vbat_scale + vbat_offset_v (vendor adds 0.2 V)
+vout_channel = 2         # AIN2: shield output (~5 V)
+temp_channel = 3         # AIN3: NTC, TempC = (4.236 - V) / 0.0408
+vin_scale = 1.0
+vbat_scale = 1.0
+vout_scale = 1.0
+vbat_offset_v = 0.2
+vin_present_v = 4.5      # Vin above this = external power: no critical-battery shutdown
 vbat_low_v = 3.4         # below: stop work, shut down
-vbat_critical_v = 3.2    # below (on battery): shut down immediately
+vbat_critical_v = 3.1    # below (and no external power): shut down immediately
+
+[delete]                 # deleting uploaded files while the car is attached = brief drive eject
+quiet_s = 60             # eject only after the host wrote nothing to the image for this long
+min_interval_min = 15    # at most one eject per this many minutes
+max_wait_min = 120       # forced reclaim (live.reclaim_gb or low space) skips the quiet gate after this long
 
 [live]
 enabled = true           # upload while the car is attached (read-only mount, no delete)
 interval_s = 300
-reclaim_eject = true     # briefly eject the drive to delete uploaded files once enough pile up
-reclaim_gb = 8
+reclaim_eject = true     # briefly eject the drive to delete uploaded-and-verified files (see [delete])
+reclaim_gb = 8           # force trigger: this much uploaded-but-undeleted data

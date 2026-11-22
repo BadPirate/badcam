@@ -20,6 +20,7 @@ LIVE_UPLOAD = "LIVE_UPLOAD"
 DETACHED_WORK = "DETACHED_WORK"
 ON_BATTERY_IDLE = "ON_BATTERY_IDLE"
 POLL_S = 5
+WIFI_POLL_S = 10
 BRIEF_MAX_S = 300
 
 ClientFactory = Callable[[Config], ApiClient]
@@ -54,6 +55,10 @@ class Daemon:
         self.undeleted_bytes = 0
         self.last_free: int | None = None
         self.last_idle_attempt = 0.0
+        self.last_eject = -1e12
+        self.undeleted_since: float | None = None
+        self.wifi_was_up = False
+        self._last_wifi_poll = -1e12
         self.stopped = False
         self.last_summary = ""
 
@@ -73,11 +78,18 @@ class Daemon:
             "last_summary": self.last_summary,
             "gadget_up": self.p.gadget_is_up(),
         }
+        info.update(self._telemetry())
         info.update(extra or {})
         try:
             self.db.set_meta("status", json.dumps(info))
         except Exception:  # pragma: no cover
             pass
+
+    def _telemetry(self) -> dict:
+        try:
+            return getattr(self.power, "telemetry", dict)()
+        except Exception:  # pragma: no cover
+            return {}
 
     def ping_body(self) -> dict:
         body: dict = {
@@ -117,7 +129,12 @@ class Daemon:
 
     def battery_critical(self) -> bool:
         v = self.power.battery_v()
-        return v is not None and v < self.cfg.ups.vbat_critical_v
+        if v is None or v >= self.cfg.ups.vbat_critical_v:
+            return False
+        vin = getattr(self.power, "vin_v", lambda: None)()
+        if vin is not None and vin > self.cfg.ups.vin_present_v:
+            return False  # on external power: the battery is charging, do not power off
+        return True
 
     def _finish_cycle_log(self) -> None:
         if self.last_cycle_log:
@@ -174,28 +191,60 @@ class Daemon:
                 self.lost_since = None
                 self.set_state(DETACHED_WORK)
                 return
+        arrived = self._wifi_arrived()
         if car and now >= self.backoff_until:
-            if self.cfg.live.enabled and now - self.last_live >= self.cfg.live.interval_s:
+            if self.cfg.live.enabled and (arrived or now - self.last_live >= self.cfg.live.interval_s):
+                if arrived:
+                    log.get().info("upload network connected: uploading now")
                 self.last_live = now
                 self.live_cycle()
                 return
             if self.cfg.live.enabled and self._reclaim_needed():
-                client = self.network_ok()
-                if client is not None:
-                    client.close()
-                    log.get().info("reclaiming space: brief eject")
-                    self.detached_cycle(brief=True)
-                    return
+                log.get().info("reclaiming space: brief eject (%.1f MB uploaded, not deleted)", self.undeleted_bytes / 1e6)
+                self.last_eject = now
+                self.undeleted_since = None
+                self.detached_cycle(brief=True)
+                return
         self.p.sleep(POLL_S)
 
+    def _wifi_arrived(self) -> bool:
+        """True once when an upload network comes up (polled, so it reacts within ~10 s)."""
+        now = self.p.now()
+        if now - self._last_wifi_poll < WIFI_POLL_S:
+            return False
+        self._last_wifi_poll = now
+        ssid = self.p.current_ssid()
+        up = bool(ssid and ssid in self.cfg.upload_ssids())
+        arrived = up and not self.wifi_was_up
+        self.wifi_was_up = up
+        return arrived
+
     def _reclaim_needed(self) -> bool:
-        s, lv = self.cfg.storage, self.cfg.live
-        if self.last_free is not None and self.last_free < s.min_free_gb * 1024**3:
-            return True
-        return lv.reclaim_eject and self.undeleted_bytes >= lv.reclaim_gb * 1024**3
+        """Eject to delete uploaded-and-verified files, gated on host write-quiet and a minimum interval."""
+        s, lv, dl = self.cfg.storage, self.cfg.live, self.cfg.delete
+        now = self.p.now()
+        if self.undeleted_bytes <= 0:
+            self.undeleted_since = None
+            return False
+        if self.undeleted_since is None:
+            self.undeleted_since = now
+        low_space = self.last_free is not None and self.last_free < s.min_free_gb * 1024**3
+        if not lv.reclaim_eject and not low_space:
+            return False
+        if now - self.last_eject < dl.min_interval_min * 60:
+            return False
+        force = low_space or self.undeleted_bytes >= lv.reclaim_gb * 1024**3
+        if force and now - self.undeleted_since >= dl.max_wait_min * 60:
+            return True  # max-wait override: the host never went quiet
+        idle = self.p.image_idle_s()
+        return idle is not None and idle >= dl.quiet_s
 
     def _detached_and_next(self) -> None:
         reason = self.detached_cycle(brief=False)
+        for _ in range(10):  # after rebinding, the host needs a few seconds to enumerate again
+            if self.power.car_power():
+                break
+            self.p.sleep(1)
         if reason == "car_back":
             self.set_state(RECORDING)
         elif self.power.car_power():
@@ -208,13 +257,11 @@ class Daemon:
                 self.p.poweroff()
                 self.stopped = True
             else:
-                if getattr(self.power, "trusted", lambda: True)():
+                if self.cfg.power.standby_wifi == "off":
                     log.get().info("work done on battery: standby (Wi-Fi off)")
                     self.p.wifi_block()
                 else:
-                    # Uncalibrated: 'car power lost' may just mean no USB host (bench/desk).
-                    # Keep Wi-Fi on so the Pi stays reachable over SSH.
-                    log.get().info("work done on battery: standby (Wi-Fi kept on, UPS not calibrated)")
+                    log.get().info("work done on battery: standby (Wi-Fi kept on, power.standby_wifi = on)")
 
     # -- LIVE_UPLOAD --------------------------------------------------------------
     def live_cycle(self) -> CycleStats | None:
@@ -328,9 +375,17 @@ class Daemon:
 
         self.set_state(DETACHED_WORK)
         self.p.gadget_down()
+        absent_from = self.p.now()
         try:
             if not brief:
                 self._maybe_fsck()
+            elif self.p.fs_dirty():
+                log.get().info("brief eject: dirty flag set, running fsck first")
+                try:
+                    self.p.fsck()
+                    self.p.fsck_stamp()
+                except Exception as exc:
+                    log.get().warning("fsck failed (ignored): %s", exc)
             mount = self.p.mount_rw()
             try:
                 events = scan(mount, self.cfg.storage.upload_recent)
@@ -376,6 +431,7 @@ class Daemon:
                 self.p.unmount()
         finally:
             self.p.gadget_up()
+        log.get().info("drive absent for %.1fs", self.p.now() - absent_from)
         self.last_summary = f"detached({'brief' if brief else 'full'}) {reason}: " + stats.summary()
         log.get().info(self.last_summary)
         self._finish_cycle_log()
@@ -456,7 +512,10 @@ class Daemon:
             self.stopped = True
             return
         now = self.p.now()
-        if self.pending_files and now - self.last_idle_attempt >= self.cfg.power.idle_retry_min * 60:
+        arrived = self._wifi_arrived()
+        if arrived or (self.pending_files and now - self.last_idle_attempt >= self.cfg.power.idle_retry_min * 60):
+            if arrived:
+                log.get().info("upload network connected: uploading now")
             self.last_idle_attempt = now
             self.p.wifi_unblock()
             self._detached_and_next()

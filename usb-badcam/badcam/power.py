@@ -1,9 +1,7 @@
-"""Power sensing: ADS1015-style I2C reader (UPS) with a USB host-state fallback.
+"""Power sensing: car presence from the USB link, battery and Vin from the UPS ADC.
 
-The Pi-UpTime UPS 2.0 exposes a 12-bit ADC at I2C 0x48 (bench-verified; 0x49/0x4b depend on jumpers). Its register map was
-not available when this was written, so the driver is a generic ADS1015
-single-shot reader and the channel numbers and scales are config. Run
-`badcam probe-ups` on the bench to find them (docs/BENCH-TEST.md, B3).
+The Pi-UpTime UPS 2.0 has a TLA2024 (ADS1015-compatible) at I2C 0x48 (jumper dependent).
+Bench-confirmed map: AIN0 = Vin, AIN1 = battery (+0.2 V), AIN2 = Vout, AIN3 = NTC.
 """
 
 from __future__ import annotations
@@ -85,8 +83,17 @@ class PowerSource(Protocol):
     def battery_v(self) -> float | None: ...
 
 
+PRESENT_STATES = ("configured", "suspended")  # a suspended host is still a connected host
+ABSENT_STATES = ("not attached", "default", "powered", "addressed")
+
+
+def ntc_temp_c(volts: float) -> float:
+    """Vendor formula for the Pi-UpTime UPS 2.0 NTC on AIN3."""
+    return (4.236 - volts) / 0.0408
+
+
 class PowerMonitor:
-    """Decides "car power present" and exposes battery voltage."""
+    """"Car present" = the USB link (gadget UDC state). The UPS ADC gives battery and Vin telemetry."""
 
     def __init__(
         self,
@@ -99,16 +106,6 @@ class PowerMonitor:
         self.opener = opener or (lambda u: LinuxI2C(u.bus, u.address))
         self._adc: Ads1015 | None = None
         self._last_err_log = -1e9
-
-    def _use_ups(self) -> bool:
-        u, p = self.cfg.ups, self.cfg.power
-        if u.driver == "none" or p.source == "udc":
-            return False
-        return p.source == "ups" or (p.source == "auto" and u.calibrated)
-
-    def trusted(self) -> bool:
-        """True when 'car power' comes from the calibrated UPS, not the USB-host fallback."""
-        return self._use_ups()
 
     def _adc_or_none(self) -> Ads1015 | None:
         if self.cfg.ups.driver == "none":
@@ -127,12 +124,12 @@ class PowerMonitor:
             self._last_err_log = now
             log.get().warning("power: %s", msg)
 
-    def _volts(self, channel: int, scale: float) -> float | None:
+    def _raw(self, channel: int) -> float | None:
         adc = self._adc_or_none()
         if adc is None:
             return None
         try:
-            return adc.read_volts(channel) * scale
+            return adc.read_volts(channel)
         except OSError as exc:
             self._adc = None
             self._warn(f"I2C error: {exc}")
@@ -140,19 +137,44 @@ class PowerMonitor:
 
     def vin_v(self) -> float | None:
         u = self.cfg.ups
-        return self._volts(u.vin_channel, u.vin_scale)
+        v = self._raw(u.vin_channel)
+        return None if v is None else v * u.vin_scale
 
     def battery_v(self) -> float | None:
         u = self.cfg.ups
-        return self._volts(u.vbat_channel, u.vbat_scale)
+        v = self._raw(u.vbat_channel)
+        return None if v is None else v * u.vbat_scale + u.vbat_offset_v
+
+    def vout_v(self) -> float | None:
+        u = self.cfg.ups
+        v = self._raw(u.vout_channel)
+        return None if v is None else v * u.vout_scale
+
+    def temp_c(self) -> float | None:
+        v = self._raw(self.cfg.ups.temp_channel)
+        return None if v is None else ntc_temp_c(v)
+
+    def telemetry(self) -> dict[str, float | None]:
+        def r(x: float | None, n: int = 2) -> float | None:
+            return None if x is None else round(x, n)
+
+        return {
+            "vin_v": r(self.vin_v()),
+            "battery_v": r(self.battery_v()),
+            "vout_v": r(self.vout_v()),
+            "temp_c": r(self.temp_c(), 1),
+        }
 
     def car_power(self) -> bool:
-        if self._use_ups():
+        if self.cfg.power.source == "ups":
             vin = self.vin_v()
             if vin is not None:
                 return vin >= self.cfg.ups.vin_present_v
-            self._warn("falling back to USB host state")
-        return self.platform.udc_state() == "configured"
+            self._warn("Vin unreadable, using the USB link")
+        state = self.platform.udc_state()
+        if state in ABSENT_STATES:
+            return False
+        return True  # configured, suspended, or unknown (never detach on a read error)
 
     def probe(self) -> list[float] | None:
         adc = self._adc_or_none()
@@ -175,6 +197,9 @@ class FakePower:
 
     def vin_v(self) -> float | None:
         return 5.1 if self.car_power() else 0.0
+
+    def telemetry(self) -> dict:
+        return {"vin_v": self.vin_v(), "battery_v": self.battery_v(), "vout_v": 5.0, "temp_c": 25.0}
 
     def battery_v(self) -> float | None:
         return self.vbat_fn() if self.vbat_fn else self.vbat
