@@ -1,0 +1,116 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum EventKind {
+  SENTRY
+  SAVED
+  RECENT
+}
+
+enum StitchStatus {
+  PENDING
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+}
+
+model Device {
+  id         String    @id @default(cuid())
+  name       String    @unique @db.VarChar(64)
+  tokenHash  String    @unique @db.Char(64) // sha256 hex of the bearer token
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime?
+  lastStatus String?   @db.Text // last ping body, JSON text
+  revokedAt  DateTime?
+  events     Event[]
+  clips      Clip[]
+}
+
+model Event {
+  id                 String       @id @default(cuid())
+  deviceId           String
+  device             Device       @relation(fields: [deviceId], references: [id])
+  kind               EventKind
+  key                String       @db.VarChar(32) // folder name, or YYYY-MM-DD_HH for RECENT
+  startedAt          DateTime // earliest clip minute (car-local stored as UTC)
+  endedAt            DateTime?
+  triggerAt          DateTime? // event.json timestamp
+  city               String?      @db.VarChar(120)
+  lat                Float?
+  lon                Float?
+  reason             String?      @db.VarChar(120)
+  camera             String?      @db.VarChar(32)
+  rawJson            String?      @db.Text
+  uploadComplete     Boolean      @default(false)
+  lastUploadAt       DateTime     @default(now())
+  stitchStatus       StitchStatus @default(PENDING)
+  stitchError        String?      @db.Text
+  stitchedBytes      BigInt       @default(0)
+  durationSec        Int?
+  hasPoster          Boolean      @default(false)
+  hasHighlight       Boolean      @default(false)
+  originalsBytes     BigInt       @default(0)
+  originalsDeletedAt DateTime?
+  starred            Boolean      @default(false)
+  viewedAt           DateTime?
+  deletedAt          DateTime? // tombstone: files gone, rows kept for /files/check
+  createdAt          DateTime     @default(now())
+  clips              Clip[]
+  segments           Segment[]
+
+  @@unique([deviceId, kind, key])
+  @@index([deletedAt, startedAt])
+  @@index([stitchStatus])
+}
+
+model Clip {
+  id          String   @id @default(cuid())
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id])
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  path        String   @db.VarChar(191) // contract path
+  camera      String?  @db.VarChar(32) // null for event.json / thumb.png
+  minuteKey   String?  @db.VarChar(19) // YYYY-MM-DD_HH-MM-SS of the clip
+  size        Int
+  sha256      String   @db.Char(64)
+  valid       Boolean  @default(true)
+  durationSec Float?
+  width       Int?
+  height      Int?
+  uploadedAt  DateTime @default(now())
+  fileDeleted Boolean  @default(false)
+
+  @@unique([deviceId, path])
+  @@index([eventId, minuteKey])
+}
+
+model Segment {
+  id          String       @id @default(cuid())
+  eventId     String
+  event       Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  minuteKey   String       @db.VarChar(19)
+  status      StitchStatus @default(QUEUED)
+  durationSec Float?
+  error       String?      @db.Text
+
+  @@unique([eventId, minuteKey])
+}
+
+model JobRun {
+  id         String    @id @default(cuid())
+  name       String    @db.VarChar(64)
+  runKey     String    @db.VarChar(64)
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  outcome    String?   @db.VarChar(500)
+
+  @@unique([name, runKey])
+}
