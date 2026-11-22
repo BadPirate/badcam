@@ -38,3 +38,43 @@ def test_idempotent_and_open_network(tmp_path):
     wifi.apply(cfg, tmp_path)
     assert (tmp_path / "badcam-1.nmconnection").read_text() == first
     assert "wifi-security" not in first
+
+
+def test_existing_profile_is_not_duplicated(tmp_path):
+    nm, run = tmp_path / "nm", tmp_path / "run"
+    run.mkdir()
+    (run / "netplan-wlan0-Home.nmconnection").write_text(
+        "[connection]\nid=netplan-wlan0-Home\ntype=wifi\n\n[wifi]\nssid=Home\nmode=infrastructure\n"
+    )
+    cfg = cfg_with(WifiCfg("Home", "", 20), WifiCfg("Office", "secret-off", 10))
+    written, _ = wifi.apply(cfg, nm, [run])
+    assert written == ["badcam-2.nmconnection"]
+    assert cfg.upload_ssids() == {"Home", "Office"}
+
+
+def test_bad_entries_are_skipped_not_fatal(tmp_path, capsys):
+    cfg = cfg_with(WifiCfg("", "x"), WifiCfg("Short", "abc"), WifiCfg("Good", "goodpassword"))
+    written, _ = wifi.apply(cfg, tmp_path, [])
+    assert written == ["badcam-3.nmconnection"]
+    assert "skipped" in capsys.readouterr().out
+
+
+def test_cli_wifi_apply_never_fails(tmp_path):
+    from badcam.__main__ import main
+
+    bad = tmp_path / "bad.toml"
+    bad.write_text("this is not [ toml")
+    assert main(["--config", str(bad), "wifi-apply", "--dir", str(tmp_path / "nm")]) == 0
+    assert main(["--config", str(tmp_path / "missing.toml"), "wifi-apply", "--dir", str(tmp_path / "nm")]) == 0
+
+
+def test_generated_file_is_valid_keyfile(tmp_path):
+    import configparser
+
+    wifi.apply(cfg_with(WifiCfg("HomeNet", "secret-home", 20)), tmp_path, [])
+    cp = configparser.ConfigParser(interpolation=None)
+    cp.read(tmp_path / "badcam-1.nmconnection")
+    assert cp["connection"]["type"] == "wifi" and cp["connection"]["id"] == "badcam-1"
+    assert cp["wifi"]["ssid"] == "HomeNet" and cp["wifi"]["mode"] == "infrastructure"
+    assert cp["wifi-security"]["key-mgmt"] == "wpa-psk" and cp["wifi-security"]["psk"] == "secret-home"
+    assert cp["ipv4"]["method"] == "auto"

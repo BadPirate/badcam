@@ -10,7 +10,7 @@ chunk_mb = 8
 ssid = "HomeNet"
 psk = "change-me-home"
 priority = 20
-upload = true       # false = connect (for SSH) but never upload on it
+upload = true       # omit psk to reuse a network NetworkManager already knows. false = connect (for SSH) but never upload on it
 
 [[wifi]]
 ssid = "Office"

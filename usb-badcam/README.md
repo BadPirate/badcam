@@ -26,7 +26,7 @@ setup is adapted from teslausb (MIT, see `NOTICE`).
 4. Edit `/boot/firmware/badcam.toml`: `server.url`, `server.token` (from the web app: Settings -> Add device) and any extra `[[wifi]]` networks. `badcam check-config` validates it.
 5. `sudo reboot`. Then `badcam status` and `journalctl -u badcam -f`.
 
-The Wi-Fi you set in the Imager stays (it is a separate NetworkManager connection). Entries in `badcam.toml` are added on top at every boot as `badcam-<n>.nmconnection` files; removing an entry removes its file at the next boot (or run `sudo badcam wifi-apply` and `sudo nmcli connection reload`).
+The Wi-Fi you set in the Imager stays (it is a separate NetworkManager connection). To make it an upload network without copying its password, list it by name only: `[[wifi]]` with `ssid = "YourHomeNet"` and `upload = true` (no `psk`). If NetworkManager already has a saved connection for that SSID, badcam writes no profile for it and touches nothing; it only counts as a known upload network. Entries in `badcam.toml` are added on top at every boot as `badcam-<n>.nmconnection` files; removing an entry removes its file at the next boot (or run `sudo badcam wifi-apply` and `sudo nmcli connection reload`).
 
 The install keeps `avahi-daemon` on so `<hostname>.local` works; run `BADCAM_MASK_AVAHI=1 sudo ./install.sh` to disable it for a slightly faster boot.
 
@@ -92,6 +92,16 @@ Python 3.11+, standard library only at runtime. All system effects go through `b
 - Wi-Fi: `nmcli connection show`, `ls /etc/NetworkManager/system-connections/`.
 - Boot time: `systemd-analyze`, `dmesg | grep "badcam: gadget bound"`. Further trimming: `BADCAM_MASK_AVAHI=1`, a Zero 2 W, read-only root (not done).
 - Reclaim a stuck image: `sudo systemctl stop badcam; sudo /opt/badcam/gadget.sh down; sudo umount /mnt/badcam-cam; sudo losetup -D`.
+
+## Recovery (Pi unreachable)
+
+Put the SD card in a laptop and edit `cmdline.txt` on the boot partition: append `systemd.mask=badcam.service systemd.mask=badcam-wifi.service` (space separated, same line). The Pi then boots as stock Raspberry Pi OS. Undo it by removing those words.
+
+- `badcam-gadget.service`: binds the USB drive very early (configfs). No network.
+- `badcam-wifi.service`: before NetworkManager, writes `badcam-<n>.nmconnection` files from `badcam.toml`. It is ordering only and always exits 0, so it cannot stop NetworkManager. SSIDs that already have a saved connection are skipped.
+- `badcam.service`: the daemon (power, upload, delete). In standby it switches Wi-Fi off only once the UPS is calibrated.
+
+The journal is persistent (`SystemMaxUse=32M`) so `journalctl -b -1` shows why a boot failed. Trade-off: slightly more SD-card writes than a volatile journal; the cap keeps it small. Set `Storage=volatile` in `/etc/systemd/journald.conf.d/badcam.conf` to go back.
 
 ## Licence
 

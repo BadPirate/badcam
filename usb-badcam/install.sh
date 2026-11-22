@@ -121,7 +121,7 @@ for unit in $MASK; do
 done
 swapoff -a 2> /dev/null || true
 
-say "journald: volatile, 16 MB"
+say "journald: persistent, 32 MB cap (boot failures stay diagnosable)"
 mkdir -p /etc/systemd/journald.conf.d
 install -m 0644 "$HERE/system/journald-badcam.conf" /etc/systemd/journald.conf.d/badcam.conf
 

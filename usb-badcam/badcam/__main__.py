@@ -114,13 +114,15 @@ def cmd_probe(args: argparse.Namespace) -> int:
 
 
 def cmd_wifi(args: argparse.Namespace) -> int:
-    cfg, problems = load(args.config)
-    if problems:
+    # Never fail: this runs before NetworkManager at boot. Bad input is reported and skipped.
+    try:
+        cfg, problems = load(args.config)
         for p in problems:
             print(f"problem: {p}")
-        return 1
-    written, removed = wifi.apply(cfg, args.dir)
-    print(f"wrote {written}, removed {removed}")
+        written, removed = wifi.apply(cfg, args.dir)
+        print(f"wrote {written}, removed {removed}")
+    except Exception as e:
+        print(f"wifi-apply ignored an error: {e}")
     return 0
 
 
