@@ -11,15 +11,20 @@ import {
   originalsRoot,
   stitchedDir,
 } from "../storage/layout"
-import { retentionAction, type RetentionConfig } from "./policy"
+import { getSettings } from "../settings"
+import {
+  retentionAction,
+  type RetentionAction,
+  type RetentionConfig,
+} from "./policy"
 
-export function retentionConfig(): RetentionConfig {
-  const env = getEnv()
+export async function retentionConfig(): Promise<RetentionConfig> {
+  const s = await getSettings()
   return {
-    sentryDays: env.retainSentryDays,
-    savedDays: env.retainSavedDays,
-    recentDays: env.retainRecentDays,
-    originalsDays: env.retainOriginalsDays,
+    sentryDays: s.retainSentryDays,
+    savedDays: s.retainSavedDays,
+    recentDays: s.retainRecentDays,
+    originalsDays: s.retainOriginalsDays,
   }
 }
 
@@ -75,23 +80,20 @@ export async function deleteEvent(
   })
 }
 
-async function stitchedAt(eventId: string): Promise<Date | null> {
-  try {
-    return (await stat(path.join(stitchedDir(eventId), "event.mp4"))).mtime
-  } catch {
-    return null
-  }
-}
-
 const DAY_MS = 86_400_000
 
-export async function runRetention(now: Date = new Date()): Promise<string> {
-  const cfg = retentionConfig()
-  const events = await db.event.findMany({ where: { deletedAt: null } })
-  let deletedEvents = 0
-  let deletedOriginals = 0
-  for (const event of events) {
-    const action = retentionAction(
+/** What the policy would do to each live event right now (no changes made). */
+export async function evaluateRetention(
+  now: Date = new Date(),
+): Promise<{ event: Event; action: RetentionAction }[]> {
+  const cfg = await retentionConfig()
+  const events = await db.event.findMany({
+    where: { deletedAt: null },
+    orderBy: { startedAt: "asc" },
+  })
+  return events.map((event) => ({
+    event,
+    action: retentionAction(
       {
         kind: event.kind,
         startedAt: event.startedAt,
@@ -99,14 +101,44 @@ export async function runRetention(now: Date = new Date()): Promise<string> {
         stitchStatus: event.stitchStatus,
         stitchedAt:
           event.stitchStatus === "DONE"
-            ? ((await stitchedAt(event.id)) ?? event.lastUploadAt)
+            ? (event.stitchedAt ?? event.lastUploadAt)
             : null,
         originalsDeleted: event.originalsDeletedAt !== null,
         deleted: event.deletedAt !== null,
       },
       cfg,
       now,
-    )
+    ),
+  }))
+}
+
+export type RetentionPreview = {
+  deleteEvents: number
+  deleteOriginals: number
+  /** Oldest first. */
+  next: { id: string; kind: string; startedAt: Date; action: RetentionAction }[]
+}
+
+export async function retentionPreview(
+  now: Date = new Date(),
+): Promise<RetentionPreview> {
+  const due = (await evaluateRetention(now)).filter((r) => r.action !== "keep")
+  return {
+    deleteEvents: due.filter((r) => r.action === "delete-event").length,
+    deleteOriginals: due.filter((r) => r.action === "delete-originals").length,
+    next: due.slice(0, 5).map((r) => ({
+      id: r.event.id,
+      kind: r.event.kind,
+      startedAt: r.event.startedAt,
+      action: r.action,
+    })),
+  }
+}
+
+export async function runRetention(now: Date = new Date()): Promise<string> {
+  let deletedEvents = 0
+  let deletedOriginals = 0
+  for (const { event, action } of await evaluateRetention(now)) {
     if (action === "delete-event") {
       await deleteEvent(event)
       deletedEvents++
@@ -145,7 +177,7 @@ export async function runRetention(now: Date = new Date()): Promise<string> {
 
 /** While free space is under the floor, free some: originals first, then whole events. */
 export async function runDiskGuard(): Promise<string> {
-  const floor = getEnv().minFreeGb * GIB
+  const floor = (await getSettings()).minFreeGb * GIB
   if (floor <= 0) return "disabled"
   let originals = 0
   let wholeEvents = 0

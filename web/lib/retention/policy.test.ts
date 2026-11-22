@@ -9,8 +9,8 @@ import {
 const now = new Date("2026-12-01T00:00:00Z")
 const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000)
 const cfg: RetentionConfig = {
-  sentryDays: 30,
-  savedDays: 90,
+  sentryDays: 90,
+  savedDays: 0,
   recentDays: 7,
   originalsDays: 14,
 }
@@ -27,11 +27,10 @@ const event = (o: Partial<RetentionEvent> = {}): RetentionEvent => ({
 
 describe("retentionAction", () => {
   it.each([
-    ["SENTRY", 29, "delete-originals"],
-    ["SENTRY", 31, "delete-event"],
-    ["SAVED", 31, "delete-originals"],
-    ["SAVED", 89, "delete-originals"],
-    ["SAVED", 91, "delete-event"],
+    ["SENTRY", 89, "delete-originals"],
+    ["SENTRY", 91, "delete-event"],
+    ["SAVED", 91, "delete-originals"],
+    ["SAVED", 4000, "delete-originals"],
     ["RECENT", 6, "delete-originals"],
     ["RECENT", 8, "delete-event"],
   ] as const)(
@@ -46,6 +45,17 @@ describe("retentionAction", () => {
       ).toBe(expected)
     },
   )
+
+  it("prunes saved events only once a limit is set", () => {
+    const limited = { ...cfg, savedDays: 365 }
+    const old = event({
+      kind: "SAVED",
+      startedAt: daysAgo(400),
+      stitchedAt: daysAgo(400),
+    })
+    expect(retentionAction(old, limited, now)).toBe("delete-event")
+    expect(retentionAction(old, cfg, now)).toBe("delete-originals")
+  })
 
   it("never touches starred or already deleted events", () => {
     expect(
@@ -100,7 +110,7 @@ describe("retentionAction", () => {
         event({
           stitchStatus: "FAILED",
           stitchedAt: null,
-          startedAt: daysAgo(31),
+          startedAt: daysAgo(91),
         }),
         cfg,
         now,
@@ -120,7 +130,7 @@ describe("retentionAction", () => {
     expect(
       retentionAction(
         event({
-          kind: "SAVED",
+          kind: "RECENT",
           startedAt: daysAgo(100),
           stitchedAt: daysAgo(100),
         }),

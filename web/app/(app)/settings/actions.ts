@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache"
 import { createDevice } from "@/lib/auth/device"
 import { requireOwner } from "@/lib/auth/session"
 import { db } from "@/lib/db"
+import { saveSettings } from "@/lib/settings"
+import { parseSettings } from "@/lib/settings-fields"
 
 export type AddDeviceState = {
   error: string | null
@@ -41,4 +43,21 @@ export async function revokeDevice(deviceId: string): Promise<void> {
     data: { revokedAt: new Date() },
   })
   revalidatePath("/settings")
+}
+
+export type SettingsState = {
+  errors: Record<string, string>
+  saved: boolean
+}
+
+export async function updateSettings(
+  _: SettingsState,
+  form: FormData,
+): Promise<SettingsState> {
+  await requireOwner()
+  const parsed = parseSettings(Object.fromEntries(form))
+  if (!parsed.ok) return { errors: parsed.errors, saved: false }
+  await saveSettings(parsed.settings)
+  revalidatePath("/settings")
+  return { errors: {}, saved: true }
 }

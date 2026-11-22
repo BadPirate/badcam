@@ -52,7 +52,11 @@ export async function drain(): Promise<number> {
       if (!event) break
       const claimed = await db.event.updateMany({
         where: { id: event.id, stitchStatus: "QUEUED" },
-        data: { stitchStatus: "RUNNING", stitchError: null },
+        data: {
+          stitchStatus: "RUNNING",
+          stitchError: null,
+          stitchStartedAt: new Date(),
+        },
       })
       if (claimed.count === 0) continue
       try {
@@ -234,6 +238,7 @@ async function stitchEvent(event: Event): Promise<void> {
       where: { id: event.id, stitchStatus: "RUNNING" },
       data: {
         stitchStatus: "DONE",
+        stitchedAt: new Date(),
         stitchError: null,
         stitchedBytes: BigInt(size),
         durationSec: probe.durationSec ? Math.round(probe.durationSec) : null,

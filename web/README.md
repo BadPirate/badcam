@@ -45,12 +45,16 @@ Checks: `pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm b
 
 The app refuses to start in production when a secret is missing or short, the database schema is behind the build, or `DATA_DIR` is not writable.
 
+### Retention is edited on the website
+
+The five retention values (Sentry, saved and recent days, originals-after-stitch days, free-space floor) live in the database as a single settings row and are edited under Settings (owner only; whole numbers from 0, and 0 keeps forever or turns the rule off). The environment variables above only seed the row the first time it is read; after that the database wins. Settings also lists what the next nightly run would prune. Starred events are never pruned.
+
 ## How it works
 
 - **Upload** (`lib/upload/receive.ts`): chunks are streamed to `DATA_DIR/incoming/<device>/<hash>.part`, verified by sha256 on the last chunk, then renamed into `DATA_DIR/originals/<device>/<path>`. Re-sending a finished file is a no-op, a wrong offset answers 409 with the real one, and files of events the owner deleted count as complete so the Pi never re-uploads them. There is deliberately no `proxy.ts` or middleware: request bodies stream straight to disk.
 - **Timestamps** are car-local with no zone. They are stored as if UTC and always shown as written by the car.
 - **Stitching** (`lib/stitch/`): when the Pi reports an event complete (or 30 minutes after its last upload), each camera-minute becomes a 1280x960 2x2 segment (H.264, labels and clock burned in, a missing camera becomes a black tile), the segments are joined without re-encoding into `event.mp4`, and a poster is taken from `thumb.png` or a frame near the trigger. One ffmpeg runs at a time, niced.
-- **Jobs** run inside the app (`lib/jobs/`), once per run even with several replicas: `stitch-sweep` every 5 minutes, `retention` daily at 03:17 Europe/Amsterdam, `disk-guard` hourly. Starred events are never removed. Deleting an event leaves a small tombstone row for 60 days.
+- **Jobs** run inside the app (`lib/jobs/`), once per run even with several replicas: `stitch-sweep` every 5 minutes, `retention` daily at 03:17 Europe/Amsterdam, `disk-guard` hourly. Starred events are never removed (see Retention above). Deleting an event leaves a small tombstone row for 60 days.
 - **Auth**: one owner password and a signed 30-day cookie for the viewer; per-device bearer tokens (shown once under Settings, stored as sha256) for the Pi.
 
 ## Deploying (generic, Docker Compose)

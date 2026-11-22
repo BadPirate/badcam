@@ -12,7 +12,9 @@ import {
 
 import { AddDeviceForm } from "@/components/add-device-form"
 import { db } from "@/lib/db"
-import { getEnv } from "@/lib/env"
+import { retentionPreview } from "@/lib/retention/run"
+import { getSettings } from "@/lib/settings"
+import { RetentionForm } from "@/components/retention-form"
 import { formatCarTime } from "@/lib/format"
 import { diskUsage, formatBytes } from "@/lib/storage/disk"
 import { revokeDevice } from "./actions"
@@ -37,8 +39,7 @@ function parseStatus(text: string | null): Status {
 }
 
 export default async function SettingsPage() {
-  const env = getEnv()
-  const [devices, runs, disk, totals] = await Promise.all([
+  const [devices, runs, disk, totals, settings, preview] = await Promise.all([
     db.device.findMany({ orderBy: { createdAt: "asc" } }),
     db.jobRun.findMany({ orderBy: { startedAt: "desc" }, take: 20 }),
     diskUsage().catch(() => null),
@@ -47,8 +48,9 @@ export default async function SettingsPage() {
       _count: true,
       _sum: { originalsBytes: true, stitchedBytes: true },
     }),
+    getSettings(),
+    retentionPreview(),
   ])
-  const zeroOff = (n: number) => (n === 0 ? "kept" : `${n} days`)
 
   return (
     <PageColumn width="narrow">
@@ -101,20 +103,36 @@ export default async function SettingsPage() {
         <AddDeviceForm />
       </section>
 
-      <section className="flex flex-col gap-2">
+      <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Retention</h2>
         <p className="text-sm text-muted-foreground">
-          Starred events are never removed. Set in the environment.
+          Starred events are never removed. The nightly job at 03:17 applies
+          these values; the environment only seeds them the first time.
         </p>
-        <ul className="text-sm">
-          <li>Sentry events: {zeroOff(env.retainSentryDays)}</li>
-          <li>Saved events: {zeroOff(env.retainSavedDays)}</li>
-          <li>Recent clips: {zeroOff(env.retainRecentDays)}</li>
-          <li>
-            Original clips after stitching: {zeroOff(env.retainOriginalsDays)}
-          </li>
-          <li>Free-space floor: {env.minFreeGb} GB</li>
-        </ul>
+        <RetentionForm values={settings} />
+        <div className="rounded-card border border-border p-3 text-sm">
+          <p className="font-semibold">Next prune</p>
+          {preview.next.length === 0 ? (
+            <p className="text-muted-foreground">Nothing is due.</p>
+          ) : (
+            <>
+              <p className="text-muted-foreground">
+                {preview.deleteEvents} events and {preview.deleteOriginals} sets
+                of originals are due at the next run.
+              </p>
+              <ul>
+                {preview.next.map((n) => (
+                  <li key={n.id}>
+                    {formatCarTime(n.startedAt)} {n.kind.toLowerCase()}:{" "}
+                    {n.action === "delete-event"
+                      ? "delete event"
+                      : "delete originals"}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
       </section>
 
       <section className="flex flex-col gap-2">

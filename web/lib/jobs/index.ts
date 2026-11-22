@@ -8,7 +8,7 @@ import {
 
 import { db } from "../db"
 import { runDiskGuard, runRetention } from "../retention/run"
-import { drain, isDraining } from "../stitch/queue"
+import { drain } from "../stitch/queue"
 import { createJobRunStore } from "./store"
 
 const THIRTY_MIN = 30 * 60_000
@@ -27,13 +27,14 @@ export async function stitchSweep(now: Date = new Date()): Promise<string> {
     where: { deletedAt: null, uploadComplete: true, stitchStatus: "PENDING" },
     data: { stitchStatus: "QUEUED" },
   })
-  // Only this process stitches, so RUNNING without an active drain is stuck.
-  const reset = isDraining()
-    ? { count: 0 }
-    : await db.event.updateMany({
-        where: { stitchStatus: "RUNNING" },
-        data: { stitchStatus: "QUEUED" },
-      })
+  // A stitch running for over 30 minutes (or with no start time) is stuck.
+  const reset = await db.event.updateMany({
+    where: {
+      stitchStatus: "RUNNING",
+      OR: [{ stitchStartedAt: null }, { stitchStartedAt: { lt: idle } }],
+    },
+    data: { stitchStatus: "QUEUED" },
+  })
   const stitched = await drain()
   return `completed ${completed.count}, queued ${queued.count}, reset ${reset.count}, stitched ${stitched}`
 }
