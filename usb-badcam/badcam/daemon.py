@@ -138,6 +138,7 @@ class Daemon:
         if not self.p.gadget_is_up():
             log.get().info("gadget not bound; binding")
             self.p.gadget_up()
+        self.p.wifi_unblock()  # a stale rfkill block from a previous standby must not survive a reboot
         self.set_state(RECORDING)
 
     # -- main loop --------------------------------------------------------------
@@ -207,8 +208,13 @@ class Daemon:
                 self.p.poweroff()
                 self.stopped = True
             else:
-                log.get().info("work done on battery: standby (Wi-Fi off)")
-                self.p.wifi_block()
+                if getattr(self.power, "trusted", lambda: True)():
+                    log.get().info("work done on battery: standby (Wi-Fi off)")
+                    self.p.wifi_block()
+                else:
+                    # Uncalibrated: 'car power lost' may just mean no USB host (bench/desk).
+                    # Keep Wi-Fi on so the Pi stays reachable over SSH.
+                    log.get().info("work done on battery: standby (Wi-Fi kept on, UPS not calibrated)")
 
     # -- LIVE_UPLOAD --------------------------------------------------------------
     def live_cycle(self) -> CycleStats | None:

@@ -1,7 +1,8 @@
 [Unit]
 Description=badcam USB mass-storage gadget (binds the drive early)
 DefaultDependencies=no
-After=local-fs.target sys-kernel-config.mount
+# Not local-fs.target: on a Pi Zero that waits for swap/zram setup (~30 s). Root only needs to be remounted rw.
+After=systemd-remount-fs.service systemd-modules-load.service sys-kernel-config.mount
 Before=basic.target
 ConditionPathExists=/var/lib/badcam/cam.img
 

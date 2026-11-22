@@ -106,6 +106,10 @@ class PowerMonitor:
             return False
         return p.source == "ups" or (p.source == "auto" and u.calibrated)
 
+    def trusted(self) -> bool:
+        """True when 'car power' comes from the calibrated UPS, not the USB-host fallback."""
+        return self._use_ups()
+
     def _adc_or_none(self) -> Ads1015 | None:
         if self.cfg.ups.driver == "none":
             return None
