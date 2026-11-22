@@ -442,3 +442,71 @@ def test_standby_keeps_gadget_bound_and_resumes_within_seconds(env):
     env.power.car = True  # host returns
     env.daemon.step()
     assert env.daemon.state == RECORDING and not env.p.wifi_blocked and env.p.gadget
+
+
+class _Capture:
+    def __enter__(self):
+        import logging
+
+        from badcam import log
+
+        self.lines = []
+        outer = self
+
+        class H(logging.Handler):
+            def emit(self, record):
+                outer.lines.append(record.getMessage())
+
+        self.h = H(level=logging.INFO)
+        self.logger = log.LOGGER
+        self.old = self.logger.level
+        self.logger.setLevel(logging.INFO)
+        self.logger.addHandler(self.h)
+        return self
+
+    def __exit__(self, *a):
+        self.logger.removeHandler(self.h)
+        self.logger.setLevel(self.old)
+
+
+def test_ups_input_events_logged_with_hysteresis_and_debounce(env):
+    env.daemon.startup()
+    vin = [5.0]
+    env.power.vin_v = lambda: vin[0]
+    with _Capture() as cap:
+        env.daemon.step()  # learns the initial state, logs nothing
+        vin[0] = 4.0  # between thresholds: no change
+        env.p.t += 6
+        env.daemon.step()
+        vin[0] = 0.0
+        env.daemon.step()  # candidate "lost", debounce starts
+        assert not any("ups input" in line for line in cap.lines)
+        env.p.t += 6
+        env.daemon.step()
+        lost = [line for line in cap.lines if "ups input lost" in line]
+        assert len(lost) == 1 and "vin=0.00V" in lost[0] and "usb=" in lost[0] and "vbatt=" in lost[0]
+        vin[0] = 4.2  # above absent threshold but below present: still lost
+        env.p.t += 6
+        env.daemon.step()
+        vin[0] = 5.0
+        env.daemon.step()
+        env.p.t += 6
+        env.daemon.step()
+        assert any("ups input restored" in line for line in cap.lines)
+
+
+def test_periodic_and_start_status_lines(env):
+    env.cfg.log.status_interval_min = 15
+    with _Capture() as cap:
+        env.daemon.startup()
+        assert sum("status[start]" in line for line in cap.lines) == 1
+        env.daemon.step()
+        assert sum("status[periodic]" in line for line in cap.lines) == 0
+        env.p.t += 15 * 60 + 1
+        env.daemon.step()
+        s = [line for line in cap.lines if "status[periodic]" in line]
+        assert len(s) == 1
+        for key in ("state=", "usb=", "vin=", "vbatt=", "vout=", "temp=", "wifi=", "pending=", "undeleted_mb=", "uptime="):
+            assert key in s[0]
+        env.daemon.startup()  # a later start shows the previous status
+        assert any("previous run's last status" in line for line in cap.lines)

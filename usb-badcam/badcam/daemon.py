@@ -21,6 +21,9 @@ DETACHED_WORK = "DETACHED_WORK"
 ON_BATTERY_IDLE = "ON_BATTERY_IDLE"
 POLL_S = 5
 WIFI_POLL_S = 10
+UPS_PRESENT_V = 4.5  # log-only Vin hysteresis
+UPS_ABSENT_V = 3.8
+UPS_DEBOUNCE_S = 5
 IDLE_POLL_S = 2  # standby: notice the host coming back within seconds
 BRIEF_MAX_S = 300
 
@@ -57,6 +60,9 @@ class Daemon:
         self.last_free: int | None = None
         self.last_idle_attempt = 0.0
         self.last_eject = -1e12
+        self.ups_input: bool | None = None
+        self._ups_pending: tuple[bool, float] | None = None
+        self.last_status = -1e12
         self.undeleted_since: float | None = None
         self.wifi_was_up = False
         self._last_wifi_poll = -1e12
@@ -157,7 +163,11 @@ class Daemon:
             log.get().info("gadget not bound; binding")
             self.p.gadget_up()
         self.p.wifi_unblock()  # a stale rfkill block from a previous standby must not survive a reboot
+        prev = self.db.get_meta("last_status_line")
+        if prev:
+            log.get().info("previous run's last status: %s", prev)
         self.set_state(RECORDING)
+        self._status_line("start")
 
     # -- main loop --------------------------------------------------------------
     def run(self) -> None:
@@ -165,8 +175,67 @@ class Daemon:
         while not self.stopped:
             self.step()
 
+    # -- logging aids (never drive state) ---------------------------------------
+    @staticmethod
+    def _uptime_s() -> float | None:
+        try:
+            with open("/proc/uptime") as fh:
+                return float(fh.read().split()[0])
+        except (OSError, ValueError, IndexError):
+            return None
+
+    def _status_line(self, why: str = "periodic") -> None:
+        t = self._telemetry()
+        up = self._uptime_s()
+        ssid = self.p.current_ssid()
+        line = (
+            f"status[{why}] state={self.state} usb={self.p.udc_state()} "
+            f"vin={t.get('vin_v')}V vbatt={t.get('battery_v')}V vout={t.get('vout_v')}V temp={t.get('temp_c')}C "
+            f"wifi={ssid or 'none'} pending={self.pending_files} undeleted_mb={self.undeleted_bytes / 1e6:.1f} "
+            f"uptime={'?' if up is None else f'{up / 60:.0f}min'}"
+        )
+        log.get().info(line)
+        self.last_status = self.p.now()
+        try:
+            self.db.set_meta("last_status_line", line)
+        except Exception:  # pragma: no cover
+            pass
+
+    def _log_housekeeping(self) -> None:
+        now = self.p.now()
+        iv = self.cfg.log.status_interval_min
+        if iv and now - self.last_status >= iv * 60:
+            self._status_line()
+        vin = getattr(self.power, "vin_v", lambda: None)()
+        if vin is None:
+            return
+        if self.ups_input is None:
+            self.ups_input = vin >= UPS_PRESENT_V
+            return
+        target = self.ups_input
+        if self.ups_input and vin < UPS_ABSENT_V:
+            target = False
+        elif not self.ups_input and vin > UPS_PRESENT_V:
+            target = True
+        if target == self.ups_input:
+            self._ups_pending = None
+            return
+        if self._ups_pending is None or self._ups_pending[0] != target:
+            self._ups_pending = (target, now)
+            return
+        if now - self._ups_pending[1] >= UPS_DEBOUNCE_S:
+            self.ups_input = target
+            self._ups_pending = None
+            t = self._telemetry()
+            log.get().info(
+                "ups input %s: vin=%.2fV vbatt=%sV usb=%s",
+                "restored" if target else "lost", vin, t.get("battery_v"), self.p.udc_state(),
+            )
+            self._status_line("ups-input")
+
     def step(self) -> None:
         """One iteration of the current state."""
+        self._log_housekeeping()
         car = self.power.car_power()
         if not car and self.battery_critical():
             self.critical_shutdown()

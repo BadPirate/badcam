@@ -87,6 +87,11 @@ class DeleteCfg:
 
 
 @dataclass
+class LogCfg:
+    status_interval_min: int = 15  # periodic status line (0 = off)
+
+
+@dataclass
 class Config:
     server: ServerCfg = field(default_factory=ServerCfg)
     wifi: list[WifiCfg] = field(default_factory=list)
@@ -95,6 +100,7 @@ class Config:
     ups: UpsCfg = field(default_factory=UpsCfg)
     live: LiveCfg = field(default_factory=LiveCfg)
     delete: DeleteCfg = field(default_factory=DeleteCfg)
+    log: LogCfg = field(default_factory=LogCfg)
 
     def upload_ssids(self) -> set[str]:
         return {w.ssid for w in self.wifi if w.upload}
@@ -124,14 +130,14 @@ def _fill(cls: type, data: dict[str, Any], section: str, problems: list[str]) ->
 def parse(data: dict[str, Any]) -> tuple[Config, list[str]]:
     problems: list[str] = []
     cfg = Config()
-    for name in ("server", "storage", "power", "ups", "live", "delete"):
+    for name in ("server", "storage", "power", "ups", "live", "delete", "log"):
         section = data.get(name, {})
         if not isinstance(section, dict):
             problems.append(f"[{name}] must be a table")
             continue
         setattr(cfg, name, _fill(type(getattr(cfg, name)), section, name, problems))
     for key in data:
-        if key not in ("server", "wifi", "storage", "power", "ups", "live", "delete"):
+        if key not in ("server", "wifi", "storage", "power", "ups", "live", "delete", "log"):
             problems.append(f"unknown section '{key}'")
     wifi = data.get("wifi", [])
     if not isinstance(wifi, list):
@@ -202,6 +208,8 @@ def validate(cfg: Config) -> list[str]:
         p.append("power.standby_wifi must be on or off")
     if pw.source == "ups" and u.driver == "none":
         p.append("power.source = ups needs ups.driver = ads1015")
+    if cfg.log.status_interval_min < 0:
+        p.append("log.status_interval_min must be >= 0")
     dl = cfg.delete
     if dl.quiet_s < 0 or dl.min_interval_min < 0 or dl.max_wait_min < 0:
         p.append("delete.* values must be >= 0")

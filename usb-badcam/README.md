@@ -104,7 +104,24 @@ Put the SD card in a laptop and edit `cmdline.txt` on the boot partition: append
 - `badcam-wifi.service`: before NetworkManager, writes `badcam-<n>.nmconnection` files from `badcam.toml`. It is ordering only and always exits 0, so it cannot stop NetworkManager. SSIDs that already have a saved connection are skipped.
 - `badcam.service`: the daemon (power, upload, delete). In standby it switches Wi-Fi off only if `power.standby_wifi = "off"`.
 
-The journal is persistent (`SystemMaxUse=32M`) so `journalctl -b -1` shows why a boot failed. Trade-off: slightly more SD-card writes than a volatile journal; the cap keeps it small. Set `Storage=volatile` in `/etc/systemd/journald.conf.d/badcam.conf` to go back.
+The journal is persistent (`SystemMaxUse=32M`, `SyncIntervalSec=60s` so an abrupt battery death loses about a minute of logs at most) so `journalctl -b -1` shows why a boot failed. Trade-off: more SD-card writes than a volatile journal (and a 60 s sync is more frequent than the 5 min default); the cap keeps it small. Set `Storage=volatile` in `/etc/systemd/journald.conf.d/badcam.conf` to go back.
+
+## Reading the logs after a car night
+
+```bash
+journalctl -u badcam -b -1 --no-pager          # the previous boot (the night in the car)
+journalctl -u badcam --since "yesterday 18:00" # a time window, across boots
+journalctl -u badcam -b -1 | grep -E "status\[|ups input|state |car power|drive absent|brief eject"
+journalctl -b -1 -p warning                    # warnings and errors from every unit
+```
+
+- `status[start|periodic|ups-input] state=... usb=... vin=... vbatt=... vout=... temp=... wifi=... pending=... undeleted_mb=... uptime=...`: one snapshot at daemon start, every `log.status_interval_min` (15) minutes, and at each UPS input change. `usb=configured` means the car's host is talking to the drive, `not attached` means no host. `vin` is the shield input, `vbatt` the battery, `temp` the shield NTC. `previous run's last status:` at start repeats the last snapshot of the run before.
+- `ups input lost` / `ups input restored` (with Vin, Vbatt, USB state): the shield's power input crossed 3.8 V / 4.5 V for 5 s. Logged only; it does not change behaviour (the car signal is the USB link). If it says lost when you expected the car to be on, the car cut USB power (for example Sentry cut-off).
+- `state RECORDING -> DETACHED_WORK`: the USB link was lost for `power.debounce_s`; the daemon is doing upload and delete work. `ON_BATTERY_IDLE` is standby. `LIVE_UPLOAD` is a read-only upload with the car attached.
+- `upload network connected: uploading now`: Wi-Fi arrival trigger. `live scan: N events, M stable` shows what was complete.
+- `reclaiming space: brief eject` and `drive absent for N s`: the car-side cost of deleting while attached.
+- `fsck skipped` / `running fsck (...)`, `work done on battery: standby`, `battery low`, `critical`: why the Pi idled or shut down. The log ends abruptly at the last minute if the battery died (the last `status[...]` line shows the final Vbatt).
+- `/var/lib/badcam/last-cycle.log` holds the full log of the last upload or delete cycle.
 
 ## Licence
 

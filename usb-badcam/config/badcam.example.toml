@@ -61,3 +61,6 @@ enabled = true           # upload while the car is attached (read-only mount, no
 interval_s = 300
 reclaim_eject = true     # briefly eject the drive to delete uploaded-and-verified files (see [delete])
 reclaim_gb = 8           # force trigger: this much uploaded-but-undeleted data
+
+[log]
+status_interval_min = 15   # one status line (state, USB, Vin/Vbatt/Vout/temp, Wi-Fi, files, uptime); 0 = off
