@@ -10,6 +10,10 @@ CFG=c
 
 configfs_root() {
   local root
+  if [ -n "${BADCAM_CONFIGFS:-}" ]; then # test hook: a fake configfs tree
+    echo "$BADCAM_CONFIGFS"
+    return 0
+  fi
   root=$(findmnt -o TARGET -n configfs || true)
   if [ -z "$root" ]; then
     mount -t configfs none /sys/kernel/config
@@ -19,7 +23,12 @@ configfs_root() {
 }
 
 first_udc() {
-  find /sys/class/udc -mindepth 1 -maxdepth 1 -printf '%f\n' | head -1
+  local d
+  for d in "${BADCAM_UDC_DIR:-/sys/class/udc}"/*; do
+    [ -e "$d" ] || continue
+    basename "$d"
+    return 0
+  done
 }
 
 prepare() {
@@ -46,8 +55,26 @@ prepare() {
   echo 0 > "$gadget/functions/mass_storage.0/lun.0/ro"
   echo 0 > "$gadget/functions/mass_storage.0/lun.0/cdrom"
   echo 0 > "$gadget/functions/mass_storage.0/lun.0/nofua"
-  echo "$IMAGE" > "$gadget/functions/mass_storage.0/lun.0/file"
   ln -sf "$gadget/functions/mass_storage.0" "$gadget/configs/$CFG.1"
+}
+
+# Point the LUN at $IMAGE. Rewriting `file` while a backing file is open fails with EBUSY,
+# and a LUN left open keeps a deleted or replaced image alive, so release it first.
+attach_lun() {
+  local lun="$1"
+  if [ "$(cat "$lun/file" 2> /dev/null || true)" != "$IMAGE" ]; then
+    release_lun "$lun"
+    echo "$IMAGE" > "$lun/file"
+  fi
+}
+
+# Drop the LUN's reference to the backing file (a deleted/replaced image frees its space only
+# once nothing holds it open): forced_eject first, then clear `file`. Never fails.
+release_lun() {
+  local lun="$1"
+  [ -d "$lun" ] || return 0
+  echo 1 > "$lun/forced_eject" 2> /dev/null || true
+  echo "" > "$lun/file" 2> /dev/null || true
 }
 
 up() {
@@ -55,6 +82,7 @@ up() {
   prepare
   root=$(configfs_root)
   gadget="$root/usb_gadget/$NAME"
+  attach_lun "$gadget/functions/mass_storage.0/lun.0"
   if [ -n "$(cat "$gadget/UDC")" ]; then
     return 0
   fi
@@ -71,10 +99,13 @@ down() {
   local root gadget
   root=$(configfs_root)
   gadget="$root/usb_gadget/$NAME"
-  if [ -d "$gadget" ]; then
-    echo "" > "$gadget/UDC"
+  [ -d "$gadget" ] || return 0
+  # Writing to UDC while already unbound fails (ENODEV): only unbind when bound.
+  if [ -n "$(cat "$gadget/UDC" 2> /dev/null || true)" ]; then
+    echo "" > "$gadget/UDC" || true
     echo "badcam: gadget unbound" > /dev/kmsg 2> /dev/null || true
   fi
+  release_lun "$gadget/functions/mass_storage.0/lun.0"
 }
 
 status() {
