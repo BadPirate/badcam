@@ -17,6 +17,8 @@ export type Env = {
   stitchMirror: Mirror
   highlight: boolean
   fontFile: string
+  notifyTo: string
+  publicUrl: string
 }
 
 function int(value: string | undefined, fallback: number, min = 0): number {
@@ -27,6 +29,19 @@ function int(value: string | undefined, fallback: number, min = 0): number {
 
 export function mirrorFrom(value: string | undefined): Mirror {
   return value === "back" || value === "rear_all" ? value : "none"
+}
+
+/** The public origin for links in mail, no trailing slash; "" when unset or not http(s). */
+export function publicUrlFrom(value: string | undefined): string {
+  const raw = value?.trim()
+  if (!raw) return ""
+  try {
+    const url = new URL(raw)
+    if (url.protocol !== "http:" && url.protocol !== "https:") return ""
+    return url.origin + url.pathname.replace(/\/+$/, "")
+  } catch {
+    return ""
+  }
 }
 
 /** Reads the environment each call, so tests can change it. */
@@ -49,5 +64,7 @@ export function getEnv(
     highlight: source.HIGHLIGHT === "true",
     fontFile:
       source.FONT_FILE || "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    notifyTo: source.NOTIFY_TO?.trim() ?? "",
+    publicUrl: publicUrlFrom(source.PUBLIC_URL),
   }
 }

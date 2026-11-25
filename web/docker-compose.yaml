@@ -26,6 +26,16 @@ services:
       STITCH_CRF: "${STITCH_CRF:-26}"
       STITCH_MIRROR: "${STITCH_MIRROR:-none}"
       HIGHLIGHT: "${HIGHLIGHT:-false}"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-}"
+      SMTP_SECURE: "${SMTP_SECURE:-}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      SMTP_FROM: "${SMTP_FROM:-}"
+      SMTP_REPLY_TO: "${SMTP_REPLY_TO:-}"
+      NOTIFY_TO: "${NOTIFY_TO:-}"
+      PUBLIC_URL: "${PUBLIC_URL:-}"
+      SETTINGS_SECRET_KEY: "${SETTINGS_SECRET_KEY:-}"
     volumes:
       - badcam-data:/data
     expose:

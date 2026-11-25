@@ -29,25 +29,35 @@ Checks: `pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm b
 
 ## Environment
 
-| Variable                                                          | Default     | Meaning                                                                      |
-| ----------------------------------------------------------------- | ----------- | ---------------------------------------------------------------------------- |
-| `DATABASE_URL`                                                    | required    | `mysql://user:password@host:3306/database`                                   |
-| `OWNER_PASSWORD`                                                  | required    | the one viewer password, at least 12 characters                              |
-| `SESSION_SECRET`                                                  | required    | signs the session cookie, at least 32 characters (`openssl rand -base64 48`) |
-| `DATA_DIR`                                                        | `/data`     | clips live here (one volume)                                                 |
-| `RETAIN_SENTRY_DAYS` / `RETAIN_SAVED_DAYS` / `RETAIN_RECENT_DAYS` | 30 / 90 / 7 | delete an event this long after it started; 0 keeps forever                  |
-| `RETAIN_ORIGINALS_DAYS`                                           | 14          | delete the original clips this long after a successful stitch; 0 keeps them  |
-| `MIN_FREE_GB`                                                     | 5           | the disk guard frees space below this; uploads get 507 below 1 GiB           |
-| `STITCH_FPS` / `STITCH_CRF`                                       | 24 / 26     | output frame rate and quality                                                |
-| `STITCH_MIRROR`                                                   | `none`      | `back` or `rear_all` flips rear-facing cameras                               |
-| `HIGHLIGHT`                                                       | `false`     | also make a motion-only highlight video                                      |
-| `FONT_FILE`                                                       | DejaVu Sans | font for the labels                                                          |
+| Variable                                                          | Default     | Meaning                                                                        |
+| ----------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------ |
+| `DATABASE_URL`                                                    | required    | `mysql://user:password@host:3306/database`                                     |
+| `OWNER_PASSWORD`                                                  | required    | the one viewer password, at least 12 characters                                |
+| `SESSION_SECRET`                                                  | required    | signs the session cookie, at least 32 characters (`openssl rand -base64 48`)   |
+| `DATA_DIR`                                                        | `/data`     | clips live here (one volume)                                                   |
+| `RETAIN_SENTRY_DAYS` / `RETAIN_SAVED_DAYS` / `RETAIN_RECENT_DAYS` | 30 / 90 / 7 | delete an event this long after it started; 0 keeps forever                    |
+| `RETAIN_ORIGINALS_DAYS`                                           | 14          | delete the original clips this long after a successful stitch; 0 keeps them    |
+| `MIN_FREE_GB`                                                     | 5           | the disk guard frees space below this; uploads get 507 below 1 GiB             |
+| `STITCH_FPS` / `STITCH_CRF`                                       | 24 / 26     | output frame rate and quality                                                  |
+| `STITCH_MIRROR`                                                   | `none`      | `back` or `rear_all` flips rear-facing cameras                                 |
+| `HIGHLIGHT`                                                       | `false`     | also make a motion-only highlight video                                        |
+| `FONT_FILE`                                                       | DejaVu Sans | font for the labels                                                            |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE`                         | unset       | mail server; `SMTP_SECURE=true` for implicit TLS (port 465)                    |
+| `SMTP_USER` / `SMTP_PASSWORD`                                     | unset       | credentials (used only when both are set)                                      |
+| `SMTP_FROM` / `SMTP_REPLY_TO`                                     | user        | sender, e.g. `Badcam <badcam@example.com>`, and an optional reply-to           |
+| `NOTIFY_TO`                                                       | unset       | default recipients, comma-separated                                            |
+| `PUBLIC_URL`                                                      | unset       | base URL for links in mail, e.g. `https://badcam.example.com`                  |
+| `SETTINGS_SECRET_KEY`                                             | unset       | base64 of 32 bytes (`openssl rand -base64 32`); seals the stored SMTP password |
 
 The app refuses to start in production when a secret is missing or short, the database schema is behind the build, or `DATA_DIR` is not writable.
 
 ### Retention is edited on the website
 
 The five retention values (Sentry, saved and recent days, originals-after-stitch days, free-space floor) live in the database as a single settings row and are edited under Settings (owner only; whole numbers from 0, and 0 keeps forever or turns the rule off). The environment variables above only seed the row the first time it is read; after that the database wins. Settings also lists what the next nightly run would prune. Starred events are never pruned.
+
+### Email notifications
+
+Mail is sent through `@kaperkunde/mail` (nodemailer). With no `SMTP_HOST` (environment or Settings) nothing is sent in production and Settings says "Not configured"; in development and tests mail goes to Mailpit on `localhost:1025`. Under Settings > Email the owner can override each SMTP field (empty uses the environment value), set the recipients (default `NOTIFY_TO`), send a test email, and switch notifications on or off: Sentry event ready, saved clip ready, a daily summary (time in Europe/Amsterdam, optionally skipped when nothing happened) and device alerts (low battery, low card space, not seen for N hours; off by default, one mail per problem until it clears). The SMTP password is write-only and stored sealed with `SETTINGS_SECRET_KEY`; without that key the password can only come from `SMTP_PASSWORD`. A failed event mail is retried every 15 minutes for 24 hours. Event mails link to the event page; the poster image is not attached because the mail library cannot attach files.
 
 ## How it works
 

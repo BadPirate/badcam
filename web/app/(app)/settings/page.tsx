@@ -14,6 +14,12 @@ import { AddDeviceForm } from "@/components/add-device-form"
 import { db } from "@/lib/db"
 import { retentionPreview } from "@/lib/retention/run"
 import { getSettings } from "@/lib/settings"
+import {
+  NotificationsForm,
+  SmtpForm,
+  TestEmailForm,
+} from "@/components/mail-forms"
+import { loadMailContext } from "@/lib/mail/store"
 import { RetentionForm } from "@/components/retention-form"
 import { formatCarTime } from "@/lib/format"
 import { diskUsage, formatBytes } from "@/lib/storage/disk"
@@ -39,18 +45,20 @@ function parseStatus(text: string | null): Status {
 }
 
 export default async function SettingsPage() {
-  const [devices, runs, disk, totals, settings, preview] = await Promise.all([
-    db.device.findMany({ orderBy: { createdAt: "asc" } }),
-    db.jobRun.findMany({ orderBy: { startedAt: "desc" }, take: 20 }),
-    diskUsage().catch(() => null),
-    db.event.aggregate({
-      where: { deletedAt: null },
-      _count: true,
-      _sum: { originalsBytes: true, stitchedBytes: true },
-    }),
-    getSettings(),
-    retentionPreview(),
-  ])
+  const [devices, runs, disk, totals, settings, preview, mail] =
+    await Promise.all([
+      db.device.findMany({ orderBy: { createdAt: "asc" } }),
+      db.jobRun.findMany({ orderBy: { startedAt: "desc" }, take: 20 }),
+      diskUsage().catch(() => null),
+      db.event.aggregate({
+        where: { deletedAt: null },
+        _count: true,
+        _sum: { originalsBytes: true, stitchedBytes: true },
+      }),
+      getSettings(),
+      retentionPreview(),
+      loadMailContext(),
+    ])
 
   return (
     <PageColumn width="narrow">
@@ -133,6 +141,29 @@ export default async function SettingsPage() {
             </>
           )}
         </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold">Email</h2>
+        <p className="text-sm text-muted-foreground">
+          {mail.mode === "configured"
+            ? "Mail is configured."
+            : mail.mode === "dev-fallback"
+              ? "No SMTP host is set; in development mail goes to localhost:1025 (Mailpit)."
+              : "Not configured: no SMTP host is set, so no mail is sent. Set SMTP_HOST in the environment or fill in the host below."}
+          {mail.publicUrl
+            ? ""
+            : " PUBLIC_URL is not set, so mails carry no links."}
+        </p>
+        <SmtpForm
+          smtp={mail.smtp.view}
+          keyConfigured={mail.smtp.keyConfigured}
+          recipients={mail.recipients.join(", ")}
+          recipientSource={mail.recipientSource}
+        />
+        <TestEmailForm />
+        <h3 className="font-semibold">Notifications</h3>
+        <NotificationsForm prefs={mail.prefs} />
       </section>
 
       <section className="flex flex-col gap-2">

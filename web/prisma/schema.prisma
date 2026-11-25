@@ -22,15 +22,19 @@ enum StitchStatus {
 }
 
 model Device {
-  id         String    @id @default(cuid())
-  name       String    @unique @db.VarChar(64)
-  tokenHash  String    @unique @db.Char(64) // sha256 hex of the bearer token
-  createdAt  DateTime  @default(now())
-  lastSeenAt DateTime?
-  lastStatus String?   @db.Text // last ping body, JSON text
-  revokedAt  DateTime?
-  events     Event[]
-  clips      Clip[]
+  id                String    @id @default(cuid())
+  name              String    @unique @db.VarChar(64)
+  tokenHash         String    @unique @db.Char(64) // sha256 hex of the bearer token
+  createdAt         DateTime  @default(now())
+  lastSeenAt        DateTime?
+  lastStatus        String?   @db.Text // last ping body, JSON text
+  revokedAt         DateTime?
+  // Device alerts: when each condition was last mailed; null while it is clear.
+  alertLowBatteryAt DateTime?
+  alertLowCardAt    DateTime?
+  alertOfflineAt    DateTime?
+  events            Event[]
+  clips             Clip[]
 }
 
 model Event {
@@ -61,6 +65,7 @@ model Event {
   originalsBytes     BigInt       @default(0)
   originalsDeletedAt DateTime?
   starred            Boolean      @default(false)
+  notifiedAt         DateTime? // the "ready" mail went out; a re-stitch never sends again
   viewedAt           DateTime?
   deletedAt          DateTime? // tombstone: files gone, rows kept for /files/check
   createdAt          DateTime     @default(now())
@@ -127,4 +132,30 @@ model Setting {
   retainOriginalsDays Int
   minFreeGb           Int
   updatedAt           DateTime @updatedAt
+}
+
+// One row (id "singleton"): mail and notification settings edited on the
+// Settings page. A null SMTP or recipients field means "use the environment".
+// The password is sealed with SETTINGS_SECRET_KEY, never stored in clear.
+model NotificationSettings {
+  id                 String    @id
+  smtpHost           String?   @db.VarChar(255)
+  smtpPort           Int?
+  smtpSecure         Boolean?
+  smtpUser           String?   @db.VarChar(255)
+  smtpPasswordSealed String?   @db.Text
+  smtpFrom           String?   @db.VarChar(255)
+  smtpReplyTo        String?   @db.VarChar(255)
+  recipients         String?   @db.Text // comma-separated; null uses NOTIFY_TO
+  notifySentry       Boolean   @default(true)
+  notifySaved        Boolean   @default(true)
+  notifyDaily        Boolean   @default(true)
+  dailyTime          String    @default("08:00") @db.VarChar(5) // Europe/Amsterdam
+  dailySkipEmpty     Boolean   @default(true)
+  lastSummaryAt      DateTime?
+  notifyAlerts       Boolean   @default(false)
+  alertBatteryV      Float     @default(3.5)
+  alertCardGb        Int       @default(5)
+  alertOfflineHours  Int       @default(24)
+  updatedAt          DateTime  @updatedAt
 }

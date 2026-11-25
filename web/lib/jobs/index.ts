@@ -7,6 +7,7 @@ import {
 } from "@kaperkunde/next-kit/scheduler"
 
 import { db } from "../db"
+import { runNotifications } from "../mail/job"
 import { runDiskGuard, runRetention } from "../retention/run"
 import { drain } from "../stitch/queue"
 import { createJobRunStore } from "./store"
@@ -52,6 +53,15 @@ export const jobs: Job[] = [
     timezone: "Europe/Amsterdam",
     runKey: dailyRunKey,
     run: runRetention,
+  },
+  {
+    // Retries failed event mails, sends the daily summary at its configured
+    // time and checks device alerts; each decides for itself whether it is due.
+    name: "notifications",
+    cron: "*/15 * * * *",
+    timezone: "Europe/Amsterdam",
+    runKey: (now) => now.toISOString().slice(0, 16),
+    run: runNotifications,
   },
   {
     name: "disk-guard",

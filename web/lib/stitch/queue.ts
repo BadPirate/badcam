@@ -4,6 +4,8 @@ import path from "node:path"
 import { db } from "../db"
 import { getEnv } from "../env"
 import type { Clip, Event } from "../generated/prisma/client"
+import { notifyDeps } from "../mail/deps"
+import { notifyEventReady } from "../mail/notify"
 import { originalPath, stitchedDir, tmpDir } from "../storage/layout"
 import { KNOWN_CAMERAS, eventKeyTime, type KnownCamera } from "../tesla/paths"
 import {
@@ -234,7 +236,7 @@ async function stitchEvent(event: Event): Promise<void> {
     await db.segment.deleteMany({ where: { eventId: event.id } })
 
     const size = (await stat(path.join(outDir, "event.mp4"))).size
-    await db.event.updateMany({
+    const done = await db.event.updateMany({
       where: { id: event.id, stitchStatus: "RUNNING" },
       data: {
         stitchStatus: "DONE",
@@ -246,6 +248,9 @@ async function stitchEvent(event: Event): Promise<void> {
         hasHighlight,
       },
     })
+    // Mail runs on its own: a failure is logged and never fails the stitch.
+    if (done.count === 1)
+      void notifyEventReady(event.id, notifyDeps).catch(() => undefined)
   } finally {
     await rm(work, { recursive: true, force: true })
   }
