@@ -1,0 +1,57 @@
+# The deployment file. The database is external: DATABASE_URL points at an
+# existing MySQL/MariaDB server. docker-compose.local.yaml adds its own MySQL.
+services:
+  migrate:
+    build: { context: ., target: migrate }
+    environment:
+      DATABASE_URL: "${DATABASE_URL:?}"
+    restart: "no"
+  web:
+    build: { context: ., target: runner }
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    environment:
+      DATABASE_URL: "${DATABASE_URL:?}"
+      OWNER_PASSWORD: "${OWNER_PASSWORD:?}"
+      SESSION_SECRET: "${SESSION_SECRET:?}"
+      DATA_DIR: /data
+      TZ: UTC
+      RETAIN_SENTRY_DAYS: "${RETAIN_SENTRY_DAYS:-90}"
+      RETAIN_SAVED_DAYS: "${RETAIN_SAVED_DAYS:-0}"
+      RETAIN_RECENT_DAYS: "${RETAIN_RECENT_DAYS:-7}"
+      RETAIN_ORIGINALS_DAYS: "${RETAIN_ORIGINALS_DAYS:-14}"
+      MIN_FREE_GB: "${MIN_FREE_GB:-5}"
+      STITCH_FPS: "${STITCH_FPS:-24}"
+      STITCH_CRF: "${STITCH_CRF:-26}"
+      STITCH_MIRROR: "${STITCH_MIRROR:-none}"
+      HIGHLIGHT: "${HIGHLIGHT:-false}"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-}"
+      SMTP_SECURE: "${SMTP_SECURE:-}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      SMTP_FROM: "${SMTP_FROM:-}"
+      SMTP_REPLY_TO: "${SMTP_REPLY_TO:-}"
+      NOTIFY_TO: "${NOTIFY_TO:-}"
+      PUBLIC_URL: "${PUBLIC_URL:-}"
+      SETTINGS_SECRET_KEY: "${SETTINGS_SECRET_KEY:-}"
+    volumes:
+      - badcam-data:/data
+    expose:
+      - "3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+
+volumes:
+  # Never rename this key after the first deploy: the platform derives the
+  # volume's name from it.
+  badcam-data:

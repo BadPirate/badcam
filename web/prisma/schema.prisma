@@ -1,0 +1,161 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum EventKind {
+  SENTRY
+  SAVED
+  RECENT
+}
+
+enum StitchStatus {
+  PENDING
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+}
+
+model Device {
+  id                String    @id @default(cuid())
+  name              String    @unique @db.VarChar(64)
+  tokenHash         String    @unique @db.Char(64) // sha256 hex of the bearer token
+  createdAt         DateTime  @default(now())
+  lastSeenAt        DateTime?
+  lastStatus        String?   @db.Text // last ping body, JSON text
+  revokedAt         DateTime?
+  // Device alerts: when each condition was last mailed; null while it is clear.
+  alertLowBatteryAt DateTime?
+  alertLowCardAt    DateTime?
+  alertOfflineAt    DateTime?
+  events            Event[]
+  clips             Clip[]
+}
+
+model Event {
+  id                 String       @id @default(cuid())
+  deviceId           String
+  device             Device       @relation(fields: [deviceId], references: [id])
+  kind               EventKind
+  key                String       @db.VarChar(32) // folder name, or YYYY-MM-DD_HH for RECENT
+  startedAt          DateTime // earliest clip minute (car-local stored as UTC)
+  endedAt            DateTime?
+  triggerAt          DateTime? // event.json timestamp
+  city               String?      @db.VarChar(120)
+  lat                Float?
+  lon                Float?
+  reason             String?      @db.VarChar(120)
+  camera             String?      @db.VarChar(32)
+  rawJson            String?      @db.Text
+  uploadComplete     Boolean      @default(false)
+  lastUploadAt       DateTime     @default(now())
+  stitchStatus       StitchStatus @default(PENDING)
+  stitchError        String?      @db.Text
+  stitchStartedAt    DateTime? // when the current or last stitch began
+  stitchedAt         DateTime? // when the last stitch finished
+  stitchedBytes      BigInt       @default(0)
+  durationSec        Int?
+  hasPoster          Boolean      @default(false)
+  hasHighlight       Boolean      @default(false)
+  originalsBytes     BigInt       @default(0)
+  originalsDeletedAt DateTime?
+  starred            Boolean      @default(false)
+  notifiedAt         DateTime? // the "ready" mail went out; a re-stitch never sends again
+  viewedAt           DateTime?
+  deletedAt          DateTime? // tombstone: files gone, rows kept for /files/check
+  createdAt          DateTime     @default(now())
+  clips              Clip[]
+  segments           Segment[]
+
+  @@unique([deviceId, kind, key])
+  @@index([deletedAt, startedAt])
+  @@index([stitchStatus])
+}
+
+model Clip {
+  id          String   @id @default(cuid())
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id])
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  path        String   @db.VarChar(191) // contract path
+  camera      String?  @db.VarChar(32) // null for event.json / thumb.png
+  minuteKey   String?  @db.VarChar(19) // YYYY-MM-DD_HH-MM-SS of the clip
+  size        Int
+  sha256      String   @db.Char(64)
+  valid       Boolean  @default(true)
+  durationSec Float?
+  width       Int?
+  height      Int?
+  uploadedAt  DateTime @default(now())
+  fileDeleted Boolean  @default(false)
+
+  @@unique([deviceId, path])
+  @@index([eventId, minuteKey])
+}
+
+model Segment {
+  id          String       @id @default(cuid())
+  eventId     String
+  event       Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  minuteKey   String       @db.VarChar(19)
+  status      StitchStatus @default(QUEUED)
+  durationSec Float?
+  error       String?      @db.Text
+
+  @@unique([eventId, minuteKey])
+}
+
+model JobRun {
+  id         String    @id @default(cuid())
+  name       String    @db.VarChar(64)
+  runKey     String    @db.VarChar(64)
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  outcome    String?   @db.VarChar(500)
+
+  @@unique([name, runKey])
+}
+
+// One row (id "singleton"): retention values edited on the Settings page.
+// Environment variables only seed it the first time it is read.
+model Setting {
+  id                  String   @id
+  retainSentryDays    Int
+  retainSavedDays     Int
+  retainRecentDays    Int
+  retainOriginalsDays Int
+  minFreeGb           Int
+  updatedAt           DateTime @updatedAt
+}
+
+// One row (id "singleton"): mail and notification settings edited on the
+// Settings page. A null SMTP or recipients field means "use the environment".
+// The password is sealed with SETTINGS_SECRET_KEY, never stored in clear.
+model NotificationSettings {
+  id                 String    @id
+  smtpHost           String?   @db.VarChar(255)
+  smtpPort           Int?
+  smtpSecure         Boolean?
+  smtpUser           String?   @db.VarChar(255)
+  smtpPasswordSealed String?   @db.Text
+  smtpFrom           String?   @db.VarChar(255)
+  smtpReplyTo        String?   @db.VarChar(255)
+  recipients         String?   @db.Text // comma-separated; null uses NOTIFY_TO
+  notifySentry       Boolean   @default(true)
+  notifySaved        Boolean   @default(true)
+  notifyDaily        Boolean   @default(true)
+  dailyTime          String    @default("08:00") @db.VarChar(5) // Europe/Amsterdam
+  dailySkipEmpty     Boolean   @default(true)
+  lastSummaryAt      DateTime?
+  notifyAlerts       Boolean   @default(false)
+  alertBatteryV      Float     @default(3.5)
+  alertCardGb        Int       @default(5)
+  alertOfflineHours  Int       @default(24)
+  updatedAt          DateTime  @updatedAt
+}

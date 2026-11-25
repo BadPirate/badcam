@@ -1,0 +1,16 @@
+[Unit]
+Description=badcam daemon (upload clips, free space, power-aware)
+After=badcam-gadget.service
+Wants=badcam-gadget.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/badcam
+ExecStart=/usr/bin/python3 -m badcam run
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/badcam
+
+[Install]
+WantedBy=multi-user.target

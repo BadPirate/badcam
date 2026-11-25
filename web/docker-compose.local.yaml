@@ -1,0 +1,69 @@
+# Self-contained: the app plus its own MySQL, for local use or for a
+# deployment that does not share a database server. Set MYSQL_PASSWORD and
+# MYSQL_ROOT_PASSWORD (and OWNER_PASSWORD, SESSION_SECRET) in the environment.
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: badcam
+      MYSQL_USER: badcam
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?}"
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?}"
+    volumes:
+      - badcam-mysql:/var/lib/mysql
+    healthcheck:
+      test: "mysqladmin ping -p$$MYSQL_ROOT_PASSWORD -h 127.0.0.1"
+      interval: 1s
+      start_period: 30s
+      start_interval: 5s
+      timeout: 20s
+      retries: 10
+  migrate:
+    build: { context: ., target: migrate }
+    environment:
+      DATABASE_URL: "mysql://badcam:${MYSQL_PASSWORD}@mysql:3306/badcam"
+    depends_on:
+      mysql: { condition: service_healthy }
+    restart: "no"
+  web:
+    build: { context: ., target: runner }
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    environment:
+      DATABASE_URL: "mysql://badcam:${MYSQL_PASSWORD}@mysql:3306/badcam"
+      OWNER_PASSWORD: "${OWNER_PASSWORD:?}"
+      SESSION_SECRET: "${SESSION_SECRET:?}"
+      DATA_DIR: /data
+      TZ: UTC
+      RETAIN_SENTRY_DAYS: "${RETAIN_SENTRY_DAYS:-90}"
+      RETAIN_SAVED_DAYS: "${RETAIN_SAVED_DAYS:-0}"
+      RETAIN_RECENT_DAYS: "${RETAIN_RECENT_DAYS:-7}"
+      RETAIN_ORIGINALS_DAYS: "${RETAIN_ORIGINALS_DAYS:-14}"
+      MIN_FREE_GB: "${MIN_FREE_GB:-5}"
+      STITCH_FPS: "${STITCH_FPS:-24}"
+      STITCH_CRF: "${STITCH_CRF:-26}"
+      STITCH_MIRROR: "${STITCH_MIRROR:-none}"
+      HIGHLIGHT: "${HIGHLIGHT:-false}"
+    volumes:
+      - badcam-data:/data
+    ports:
+      - "3100:3000"
+    expose:
+      - "3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+
+volumes:
+  # Never rename these keys after the first deploy.
+  badcam-data:
+  badcam-mysql:

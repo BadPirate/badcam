@@ -1,0 +1,16 @@
+[Unit]
+Description=badcam: write Wi-Fi connections from badcam.toml
+# Ordering only: this unit must never be able to stop NetworkManager from starting.
+Before=NetworkManager.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/badcam
+Environment=PYTHONPATH=/opt/badcam
+ExecStart=-/usr/bin/python3 -m badcam wifi-apply
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,39 @@
+/* badcam's own dark theme: charcoal with an orange primary. */
+
+@theme inline {
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-heading: var(--font-sans);
+}
+
+:root {
+  color-scheme: dark;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Helvetica Neue", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --background: #121316;
+  --foreground: #ececf0;
+  --card: #1b1d22;
+  --card-foreground: #ececf0;
+  --popover: #24272e;
+  --popover-foreground: #ececf0;
+  --primary: #f28c28;
+  --primary-foreground: #1a1006;
+  --secondary: #2b2e36;
+  --secondary-foreground: #ececf0;
+  --muted: #23262d;
+  --muted-foreground: #9fa4b0;
+  --accent: #3a2a14;
+  --accent-foreground: #ffc98a;
+  --destructive: #ff8a8a;
+  --warning: #f5b544;
+  --warning-foreground: #1a1306;
+  --success: #6fd49a;
+  --border: color-mix(in srgb, #ffffff 10%, transparent);
+  --input: color-mix(in srgb, #ffffff 14%, transparent);
+  --ring: #f28c28;
+  --radius: 0.625rem;
+  --field: #15171b;
+  --row-hover: #1f2228;
+}
